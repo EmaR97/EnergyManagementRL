@@ -18,27 +18,28 @@ class InverterEnv(gym.Env):
         self.current_step = 0
         self.action_space = spaces.Discrete(2)
 
-        self.observation_space = spaces.Box(low=0, high=1, shape=(15,), dtype=np.float64)
+        self.observation_space = spaces.Box(low=0, high=1000, shape=(15,), dtype=np.float64)
 
         self.state = np.zeros(15)
 
         # Precompute sine and cosine values for each timestep
 
-        self.inv_factors = np.array([
-            1.0 / self.inverter_sim.prod_sim.max_step,
-            1.0 / self.inverter_sim.cons_sim.max_step,
-            1.0 / self.inverter_sim.batt_sim.max_charge_rate,
-            1.0 / self.inverter_sim.batt_sim.max_discharge_rate,
-            1.0 / self.inverter_sim.batt_sim.capacity,
-            1.0 / self.inverter_sim.grid_sim.feed_in_max_known * 2,
-            1.0 / self.inverter_sim.grid_sim.max_taken_from,
-            1.0 / self.inverter_sim.prod_sim.max_24h,
-            1.0 / self.inverter_sim.cons_sim.max_24h,
-            1.0 / self.inverter_sim.prod_sim.max_24h,
-            1.0 / self.inverter_sim.cons_sim.max_24h,
-            1.0 / self.inverter_sim.prod_sim.max_24h,
-            1.0 / self.inverter_sim.cons_sim.max_24h
-        ])
+        # self.inv_factors = np.array([
+        #     1.0 / self.inverter_sim.prod_sim.max_step,
+        #     1.0 / self.inverter_sim.cons_sim.max_step,
+        #     1.0 / self.inverter_sim.batt_sim.max_charge_rate,
+        #     1.0 / self.inverter_sim.batt_sim.max_discharge_rate,
+        #     1.0 / self.inverter_sim.batt_sim.capacity,
+        #     1.0 / self.inverter_sim.grid_sim.feed_in_max_known * 2,
+        #     1.0 / self.inverter_sim.grid_sim.max_taken_from,
+        #     1.0 / self.inverter_sim.prod_sim.max_24h,
+        #     1.0 / self.inverter_sim.cons_sim.max_24h,
+        #     1.0 / self.inverter_sim.prod_sim.max_24h,
+        #     1.0 / self.inverter_sim.cons_sim.max_24h,
+        #     1.0 / self.inverter_sim.prod_sim.max_24h,
+        #     1.0 / self.inverter_sim.cons_sim.max_24h
+        # ])
+        self.inv_factors = np.array([1 / 1000] * 13)
 
     def reset(
             self,
@@ -54,6 +55,7 @@ class InverterEnv(gym.Env):
             self,
             action
     ):
+        self.current_step += 1
         self.inverter_sim.step(action)
         self._update_state()
         reward, _, _, _ = self.calc_reward()

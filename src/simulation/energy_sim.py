@@ -20,7 +20,7 @@ class EnergySim:
         expanded_series = zeros_before + self.energy_series + zeros_after
 
         # Compute the sliding sum using a moving window approach
-        sliding_sum = [sum(expanded_series[i:i + h24_window]) for i in range(len(expanded_series) - h24_window + 1)]
+        sliding_sum = [sum(expanded_series[i:i + h24_window])/h24_window for i in range(len(expanded_series) - h24_window + 1)]
 
         return sliding_sum[h24_window:]  # Trim the initial zero padding
 
