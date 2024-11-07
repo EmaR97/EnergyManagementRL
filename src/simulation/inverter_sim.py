@@ -79,13 +79,12 @@ class InverterSim:
         """
         Manage energy in Mode B (full-feed-to-grid): prioritize balance, grid, then battery.
         """
-
+        # see the grid as a load
         grid_acceptance = self.grid_sim.get_grid_acceptance()
         energy_balance -= grid_acceptance
         energy_balance_after_batt = self.batt_sim.step(energy_balance)  # Battery handles excess or deficit
-        if energy_balance_after_batt >= 0:
-            energy_balance_after_grid = self.grid_sim.step(grid_acceptance)
-        else:
-            energy_balance_after_batt = grid_acceptance + energy_balance_after_batt
-            energy_balance_after_grid = self.grid_sim.step(energy_balance_after_batt)
-        return energy_balance_after_grid
+        if energy_balance_after_batt >= 0:  # check if the new load can be satisfied
+            return self.grid_sim.step(grid_acceptance)
+        else:  # if the new load cant be satisfied just provide the available
+            adjusted_balance = grid_acceptance + energy_balance_after_batt
+            return self.grid_sim.step(adjusted_balance)

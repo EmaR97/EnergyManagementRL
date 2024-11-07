@@ -1,56 +1,30 @@
-# EnergyManagementRL
 
-### Project Overview
-**EnergyManagementRL** is a simulation-based project focused on optimizing energy usage in a system with renewable energy sources, specifically solar panels, a battery storage unit, and a connection to the electrical grid. Leveraging reinforcement learning (RL), this project aims to create a control strategy that maximizes self-consumption of solar energy, minimizes reliance on the grid, and optimizes battery usage.
+# Energy Management Optimization with Reinforcement Learning
 
-### Key Objectives
-- **Maximize Self-Consumption**: Optimize the usage of locally produced solar energy to reduce grid dependency.
-- **Efficient Battery Management**: Develop a strategy for charging and discharging the battery that aligns with consumption forecasts and solar production.
-- **Grid Interaction**: Minimize energy imports from the grid while also considering feed-in opportunities based on projected production and consumption.
+This project explores optimizing energy management in a renewable energy setup, aiming to balance energy production, storage, and grid interaction to minimize costs and maximize efficiency. The system includes solar energy production, battery storage, and grid connectivity, creating a complex environment where decisions about energy flow must consider real-time data, forecasted demands, and the wear on storage systems.
 
-### Features
-- **Battery and Grid Simulation**: Models that simulate battery storage, charging/discharging dynamics, and grid interactions.
-- **Forecast-Based Decision Making**: Uses short-term consumption forecasts and solar production forecasts to inform RL decisions.
-- **Data Collection and Integration**: Collects and processes real-time and historical data for enhanced simulation accuracy.
-- **Reinforcement Learning (RL)**: Implements RL techniques for control decisions in a simulation environment, using states like time of day, battery level, and forecasted data.
+## Project Goals
 
-### Model Inputs
-The model utilizes multiple input features to train the RL agent effectively:
-- **Consumption Forecasts**: Last 24 hours and upcoming 24 hours at 5-minute intervals.
-- **Battery State**: Current charge level and potential charge/discharge capacities.
-- **Solar Production Forecasts**: Forecasts for the next 72 hours at 15-minute intervals, capturing the variability in production.
-- **Grid Capacity**: Forecasted grid acceptance or feed-in potential for the next 72 hours, resampled as needed.
+The primary goal is to develop an intelligent agent that can dynamically manage energy flows in a simulated environment to:
+1. **Maximize Self-Consumption**: Utilize as much locally produced energy as possible, reducing reliance on external sources.
+2. **Optimize Grid Interactions**: Decide when to feed surplus energy back to the grid and when to purchase from it, taking into account variable pricing.
+3. **Preserve Battery Health**: Balance the use of battery storage with its degradation to ensure long-term sustainability.
 
-### Reinforcement Learning Approach
-The RL agent is designed to control actions like:
-1. Charging or discharging the battery based on forecasted energy production and consumption.
-2. Feeding excess energy into the grid when battery storage is at capacity.
-3. Drawing from the grid when solar production is low, and battery storage is insufficient.
+By combining forecasts of energy production and consumption with real-time energy flow management, this project seeks to address challenges typical in renewable energy communities, where demand and supply often fluctuate unpredictably.
 
-By simulating different scenarios and refining the agent's policy, the project aims to develop a reliable, efficient control model adaptable to various energy production and consumption patterns.
+## Approach
 
-### Installation
-To get started, clone this repository and install the required dependencies:
+To achieve these objectives, we use **Reinforcement Learning (RL)**, specifically a Proximal Policy Optimization (PPO) algorithm, which allows the agent to learn and improve its strategies through trial and error within a simulated environment. Here’s a breakdown of how it works:
 
-```bash
-git clone https://github.com/YourUsername/EnergyManagementRL.git
-cd EnergyManagementRL
-pip install -r requirements.txt
-```
+- **Simulation Components**: The environment simulates real-world dynamics, including solar energy production, energy consumption, battery storage, and grid interactions. Each component (e.g., `BatterySim`, `EnergySim`, and `GridSim`) models different aspects of the energy system to provide the RL agent with a realistic decision-making environment.
+- **RL Agent and Environment**: The RL agent interacts with a custom `InverterEnv` environment, where it takes actions like charging or discharging the battery, deciding on grid purchases or sales, and adjusting energy flow. The agent receives feedback in the form of rewards or penalties based on energy costs, grid prices, and battery wear.
+- **Training and Evaluation**: The agent is trained to optimize long-term rewards, balancing energy costs with operational efficiency. Training is conducted over many simulated days, and the results are evaluated to gauge the performance of the learned energy management strategies.
 
-### Usage
-1. **Data Preparation**: Load your historical data for consumption, solar production, and grid availability into the `data/` directory.
-2. **Train the Model**: Run the training script to start training the RL agent. This may require GPU resources for optimal performance.
-   ```bash
-   python train.py
-   ```
-3. **Run Simulations**: Use the `simulate.py` script to evaluate the model in various scenarios and analyze performance metrics.
-   ```bash
-   python simulate.py
-   ```
+## Challenges and Opportunities
 
-### Contributing
-Contributions are welcome! Please fork the repository, make your changes, and submit a pull request. Make sure to include tests for any new features or updates.
+This project addresses several challenges typical in renewable energy management:
+- **Variability in Supply and Demand**: Renewable energy sources, like solar power, are inherently variable. The system must predict and adapt to fluctuations in both energy production and consumption.
+- **Battery Degradation**: Intensive use of battery storage accelerates wear, requiring the agent to weigh the benefits of using stored energy against the cost of battery degradation.
+- **Real-time Decision-making**: By training on simulated data, the RL agent learns to make real-time decisions, enhancing responsiveness and adaptability.
 
-### License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+By developing a model that can optimize these decisions, this project aims to contribute to more efficient, resilient, and cost-effective energy management solutions suitable for renewable energy communities and similar setups.
