@@ -21,7 +21,6 @@ class InverterSim:
         self.batt_sim = batt_sim
         self.grid_sim = grid_sim
         self.timestamps = timestamps
-
         self.current_step = 0
 
         # Precompute sine and cosine values for each timestep
@@ -35,7 +34,7 @@ class InverterSim:
             time_steps.append(sin_cos)
         return np.array(time_steps)
 
-    def _get_timestep(self):
+    def get_timestep(self):
         # Retrieve the precomputed value for the current step
         return self.precomputed_time_steps[self.current_step]
 
@@ -53,7 +52,6 @@ class InverterSim:
             action
     ):
         self.current_step += 1
-
         # Calculate energy balance (production - consumption)
         energy_balance = self.prod_sim.step() - self.cons_sim.step()
 
