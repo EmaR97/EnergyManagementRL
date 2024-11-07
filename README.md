@@ -1,30 +1,116 @@
-
 # Energy Management Optimization with Reinforcement Learning
 
-This project explores optimizing energy management in a renewable energy setup, aiming to balance energy production, storage, and grid interaction to minimize costs and maximize efficiency. The system includes solar energy production, battery storage, and grid connectivity, creating a complex environment where decisions about energy flow must consider real-time data, forecasted demands, and the wear on storage systems.
+This project implements a reinforcement learning (RL) approach to optimize energy management in a facility using
+renewable energy, battery storage, and grid interaction. By simulating an environment that includes renewable energy
+sources, battery storage, and a grid connection, we aim to maximize the self-consumption of renewable energy, reduce
+dependency on the grid, and minimize battery wear. This simulation serves as a controlled environment for training a
+reinforcement learning agent, guiding it towards making optimal energy management decisions.
 
-## Project Goals
+## System Overview
 
-The primary goal is to develop an intelligent agent that can dynamically manage energy flows in a simulated environment to:
-1. **Maximize Self-Consumption**: Utilize as much locally produced energy as possible, reducing reliance on external sources.
-2. **Optimize Grid Interactions**: Decide when to feed surplus energy back to the grid and when to purchase from it, taking into account variable pricing.
-3. **Preserve Battery Health**: Balance the use of battery storage with its degradation to ensure long-term sustainability.
+The system models a realistic energy management environment with the following goals:
 
-By combining forecasts of energy production and consumption with real-time energy flow management, this project seeks to address challenges typical in renewable energy communities, where demand and supply often fluctuate unpredictably.
+- **Balance Energy Sources**: Optimize the use of renewable production, battery storage, and grid interactions.
+- **Maximize Self-Consumption**: Prioritize using locally produced energy.
+- **Minimize Costs**: Reduce expenses associated with grid purchases and battery wear.
 
-## Approach
+This environment is suitable for developing intelligent agents that can learn effective strategies to handle real-time
+energy flows, considering both short-term energy needs and long-term sustainability.
 
-To achieve these objectives, we use **Reinforcement Learning (RL)**, specifically a Proximal Policy Optimization (PPO) algorithm, which allows the agent to learn and improve its strategies through trial and error within a simulated environment. Here’s a breakdown of how it works:
+### Key Components
 
-- **Simulation Components**: The environment simulates real-world dynamics, including solar energy production, energy consumption, battery storage, and grid interactions. Each component (e.g., `BatterySim`, `EnergySim`, and `GridSim`) models different aspects of the energy system to provide the RL agent with a realistic decision-making environment.
-- **RL Agent and Environment**: The RL agent interacts with a custom `InverterEnv` environment, where it takes actions like charging or discharging the battery, deciding on grid purchases or sales, and adjusting energy flow. The agent receives feedback in the form of rewards or penalties based on energy costs, grid prices, and battery wear.
-- **Training and Evaluation**: The agent is trained to optimize long-term rewards, balancing energy costs with operational efficiency. Training is conducted over many simulated days, and the results are evaluated to gauge the performance of the learned energy management strategies.
+#### 1. `EnergySim`
+
+Models energy production and consumption within the environment, providing:
+
+- **Production Simulator (`prod_sim`)**: Models renewable energy generation, like solar power, accounting for
+  fluctuations in production.
+- **Consumption Simulator (`cons_sim`)**: Represents the energy demand of the facility.
+
+These simulators provide real-time data on energy production and consumption as well as forecasts, allowing the RL agent
+to anticipate future energy needs and availability.
+
+#### 2. `BatterySim`
+
+Represents the battery storage system, simulating charging and discharging processes:
+
+- Tracks the battery’s state of charge, charge/discharge rates, capacity, and wear rate.
+- Provides essential information for optimizing battery health and determining efficient energy storage and release
+  strategies.
+
+#### 3. `GridSim`
+
+Manages grid interactions, including energy purchases and sales:
+
+- Tracks energy fed to and drawn from the grid, respecting grid limits and energy prices.
+- Simulates grid costs and limitations, aiding the agent in balancing self-consumption with grid dependency.
+
+#### 4. `InverterSim`
+
+Integrates the production, consumption, battery, and grid simulations, serving as the coordinator for energy flows:
+
+- **Energy Balance Calculation**: Computes the difference between production and consumption.
+- **Mode-based Management**: Supports two modes of operation:
+    - **Mode A**: Prioritizes on-site consumption, reducing grid dependence.
+    - **Mode B**: Focuses on maximizing grid feed-in for sale.
+
+The inverter’s operations also leverage precomputed sine and cosine values to capture daily energy demand patterns.
+
+#### 5. `InverterEnv`
+
+Defines the Gym-compatible environment for reinforcement learning:
+
+- **State Space**: Includes metrics on energy production, consumption, battery and grid states, and time-based features.
+- **Action Space**: Enables the agent to choose operational modes (e.g., self-consumption vs. grid feeding).
+- **Reward Structure**: Rewards energy sales to the grid while penalizing grid dependency and battery wear, guiding the
+  agent to actions that lower costs and increase efficiency.
+
+The environment steps through time, updating the state and computing rewards based on the agent's actions and simulation
+feedback.
+
+### System Workflow and Interactions
+
+1. **Initialization**:
+    - The system creates instances of `EnergySim`, `BatterySim`, and `GridSim`, representing energy
+      production/consumption, battery storage, and grid interactions.
+    - An `InverterSim` instance coordinates these components to maintain the energy balance.
+    - The `InverterEnv` environment wraps `InverterSim`, providing an interface for the RL agent to interact with.
+
+2. **Simulation Step**:
+    - At each timestep, the agent selects an action, such as choosing a self-consumption or grid feed mode.
+    - The environment calculates the energy balance, directing any surplus or deficit energy towards the battery or grid
+      as per the selected mode:
+        - **Mode A**: Prioritizes battery and on-site energy use to reduce grid reliance.
+        - **Mode B**: Prioritizes grid feed-in, minimizing battery use and maximizing sales.
+    - The state is updated to reflect these decisions, preparing the system for the next timestep.
+
+3. **Reward Calculation**:
+    - The reward for each step is calculated based on:
+        - Revenue from energy sales to the grid.
+        - Penalties for grid purchases.
+        - Battery wear costs.
+    - This reward structure helps the RL agent learn to reduce costs and maximize returns.
+
+4. **Episode Termination**:
+    - The environment runs until it reaches a defined limit (e.g., one week).
+    - At the end of an episode, the environment resets, enabling the agent to start a new simulation and continue
+      learning.
+
+## Reinforcement Learning Approach
+
+Using a Proximal Policy Optimization (PPO) algorithm, the RL agent is trained to navigate the energy management
+environment effectively. Through trial and error, it learns strategies that strike a balance between self-consumption,
+cost savings, and battery preservation. The trained model can then be evaluated for performance, offering insights into
+its ability to adapt and make optimized energy management decisions over time.
 
 ## Challenges and Opportunities
 
-This project addresses several challenges typical in renewable energy management:
-- **Variability in Supply and Demand**: Renewable energy sources, like solar power, are inherently variable. The system must predict and adapt to fluctuations in both energy production and consumption.
-- **Battery Degradation**: Intensive use of battery storage accelerates wear, requiring the agent to weigh the benefits of using stored energy against the cost of battery degradation.
-- **Real-time Decision-making**: By training on simulated data, the RL agent learns to make real-time decisions, enhancing responsiveness and adaptability.
+This project addresses several challenges inherent to renewable energy systems:
 
-By developing a model that can optimize these decisions, this project aims to contribute to more efficient, resilient, and cost-effective energy management solutions suitable for renewable energy communities and similar setups.
+- **Supply and Demand Variability**: Renewable sources, like solar power, are unpredictable, requiring the system to
+  handle fluctuations in both production and demand.
+- **Battery Wear and Cost-Benefit Analysis**: The agent must balance the benefits of using stored energy against the
+  costs of battery degradation.
+- **Real-time Decision Making**: The RL agent learns to make responsive, real-time decisions, enabling it to adapt to
+  changing conditions.
+
