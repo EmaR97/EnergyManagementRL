@@ -18,7 +18,7 @@ class EnergySim:
     """
 
     def __init__(self, power_series: list[float], max_step: int = None, max_24h: int = None,
-                 energy_type: str = "production") -> None:
+                 energy_type: str = "production", daily_sample: int = 6) -> None:
         """
         Initializes the EnergySim instance with given parameters.
 
@@ -33,6 +33,8 @@ class EnergySim:
         self.step_index: int = 0
         self.energy_type: str = energy_type
         self.max_step: int = int(max_step or max(self.energy_series))
+        self.sample_size: int = day // daily_sample
+        self.forecast_range = range(0, day * 2, self.sample_size)
         self.sliding_sum = self._get_sliding_sum()
         self.max_24h: int = int(max_24h or max(self.sliding_sum))
 
@@ -43,15 +45,12 @@ class EnergySim:
         Returns:
             list[float]: List of 24-hour sliding average energy values.
         """
-        h24_window = day
-        zeros_before = [0] * h24_window
-        zeros_after = [0] * (h24_window * 3)
-        expanded_series = zeros_before + self.energy_series + zeros_after
+        window = self.sample_size
+        expanded_series = self.energy_series + ([0] * (day * 2 + window))
+        sliding_sum = [sum(expanded_series[i:i + window]) / window
+                       for i in range(len(expanded_series) - window + 1)]
 
-        sliding_sum = [sum(expanded_series[i:i + h24_window]) / h24_window
-                       for i in range(len(expanded_series) - h24_window + 1)]
-
-        return sliding_sum[h24_window:]  # Remove initial padding
+        return sliding_sum  # Remove initial padding
 
     def reset(self) -> None:
         """
@@ -80,29 +79,12 @@ class EnergySim:
         """
         return int(self.current_energy)
 
-    def get_energy_last_24h(self) -> int:
-        """
-        Retrieves the total energy from the last 24-hour window.
-
-        Returns:
-            int: Total energy over the past 24 hours.
-        """
-        return int(self.sliding_sum[self.step_index])
-
-    def get_energy_next_24h(self) -> int:
+    def get_energy_forecast(self) -> list[int]:
         """
         Predicts the total energy for the upcoming 24-hour window.
 
         Returns:
             int: Estimated energy for the next 24 hours.
         """
-        return int(self.sliding_sum[self.step_index + day])
 
-    def get_energy_24h_following_next_24h(self) -> int:
-        """
-        Predicts the total energy for the 24-hour period following the next 24 hours.
-
-        Returns:
-            int: Estimated energy for the 24 hours after the upcoming 24-hour period.
-        """
-        return int(self.sliding_sum[self.step_index + day + day])
+        return [int(self.sliding_sum[self.step_index + i]) for i in self.forecast_range]

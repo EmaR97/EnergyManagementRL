@@ -33,14 +33,8 @@ class InverterEnv(gym.Env):
         "batt_stored",
         "grid_feed_to",
         "grid_taken_from",
-        "prod_energy_last_24h",
-        "cons_energy_last_24h",
-        "prod_energy_next_24h",
-        "cons_energy_next_24h",
-        "prod_energy_following_24h",
-        "cons_energy_following_24h",
-        "cos_time",
-        "sin_time",
+        "prod_energy_next_4h",
+        "cons_energy_next_4h",
         'last_action',
         'reward',
         'reward_energy_sold',
@@ -68,8 +62,8 @@ class InverterEnv(gym.Env):
         self.max_steps = max_steps
         self.current_step = 0
         self.action_space = spaces.Discrete(2)  # Two actions: grid-feeding or self-consumption
-        self.observation_space = spaces.Box(low=0, high=1000, shape=(15,), dtype=np.float64)
-        self.state = np.zeros(15)
+        self.observation_space = spaces.Box(low=0, high=1000, shape=(31,), dtype=np.float64)
+        self.state = np.zeros(31)
         self.last_action = 0
         self.reward_energy_sold = 0
         self.penalty_energy_purchase = 0
@@ -77,24 +71,7 @@ class InverterEnv(gym.Env):
         self.reward = 0
 
         # Precompute normalization factors
-        if normalize:
-            self.inv_factors = np.array([
-                1.0 / self.inverter_sim.prod_sim.max_step,
-                1.0 / self.inverter_sim.cons_sim.max_step,
-                1.0 / self.inverter_sim.batt_sim.max_charge_rate,
-                1.0 / self.inverter_sim.batt_sim.max_discharge_rate,
-                1.0 / self.inverter_sim.batt_sim.capacity,
-                1.0 / self.inverter_sim.grid_sim.feed_in_max_known * 2,
-                1.0 / self.inverter_sim.grid_sim.max_taken_from,
-                1.0 / self.inverter_sim.prod_sim.max_24h,
-                1.0 / self.inverter_sim.cons_sim.max_24h,
-                1.0 / self.inverter_sim.prod_sim.max_24h,
-                1.0 / self.inverter_sim.cons_sim.max_24h,
-                1.0 / self.inverter_sim.prod_sim.max_24h,
-                1.0 / self.inverter_sim.cons_sim.max_24h
-            ])
-        else:
-            self.inv_factors = np.array([1 / 1000] * 13)
+        self.inv_factors = np.array([1 / 1000] * 31)
 
     def reset(self, seed=0, **kwargs):
         """
@@ -106,7 +83,7 @@ class InverterEnv(gym.Env):
         Returns:
             tuple: Initial state and an empty info dictionary.
         """
-        self.state = np.zeros(15)
+        self.state = np.zeros(31)
         self.current_step = 0
         self.inverter_sim.reset()
         self.last_action = 0
@@ -145,18 +122,18 @@ class InverterEnv(gym.Env):
             self.inverter_sim.batt_sim.get_stored(),
             self.inverter_sim.grid_sim.get_feed_to(),
             self.inverter_sim.grid_sim.get_taken_from(),
-            self.inverter_sim.prod_sim.get_energy_last_24h(),
-            self.inverter_sim.cons_sim.get_energy_last_24h(),
-            self.inverter_sim.prod_sim.get_energy_next_24h(),
-            self.inverter_sim.cons_sim.get_energy_next_24h(),
-            self.inverter_sim.prod_sim.get_energy_24h_following_next_24h(),
-            self.inverter_sim.cons_sim.get_energy_24h_following_next_24h()
+            *self.inverter_sim.prod_sim.get_energy_forecast(),
+            *self.inverter_sim.cons_sim.get_energy_forecast(),
         ])
 
         # Apply scaling factors for normalization
         scaled_values = values * self.inv_factors
         # Append precomputed sine and cosine values
-        self.state = np.concatenate([scaled_values, self.inverter_sim.get_timestep()])
+        self.state = np.concatenate([
+            scaled_values,
+            # self.inverter_sim.get_timestep()
+        ])
+
 
     def set_reward(self) -> float:
         """
@@ -208,7 +185,7 @@ class InverterEnv(gym.Env):
         """
         return dict(
             zip(self.state_names,
-                self.state.tolist() + [self.last_action, self.reward, self.reward_energy_sold,
+                self.state.tolist()[:9] + [self.last_action, self.reward, self.reward_energy_sold,
                                        self.penalty_energy_purchase, self.penalty_battery_wear])
         )
 
