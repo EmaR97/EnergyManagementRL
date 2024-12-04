@@ -7,12 +7,13 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.10"
-gymnasium = "*"
-pandas = "*"
-stable-baselines3 = "*"
-matplotlib = "*"
-fonttools = "*"
-scipy = "*"
+gymnasium = "0.29.1"
+numpy = "2.0"  # Compatible with most of the listed dependencies
+pandas = "2.2.3"
+stable-baselines3 = "^2.4.0"
+matplotlib = ">=3.9.2,<3.10.0"
+fonttools = ">=4.54.1,<4.55.0"
+scipy = ">=1.14.1,<1.15.0"
 
 [project]
 license = {file = "LICENSE"}
