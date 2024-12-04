@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 
 from .battery_sim import BatterySim
+from .consumption_sim import ConsumptionSim
 from .energy_sim import EnergySim
 from .grid_sim import GridSim
 
@@ -29,7 +30,7 @@ class InverterSim:
     def __init__(
             self,
             prod_sim: EnergySim,
-            cons_sim: EnergySim,
+            cons_sim: ConsumptionSim,
             batt_sim: BatterySim,
             grid_sim: GridSim,
             timestamps: pd.Series,

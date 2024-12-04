@@ -122,8 +122,8 @@ class InverterEnv(gym.Env):
             self.inverter_sim.batt_sim.get_stored(),
             self.inverter_sim.grid_sim.get_feed_to(),
             self.inverter_sim.grid_sim.get_taken_from(),
-            *self.inverter_sim.prod_sim.get_energy_forecast(),
-            *self.inverter_sim.cons_sim.get_energy_forecast(),
+            *self.inverter_sim.prod_sim.get_energy_sample(),
+            *self.inverter_sim.cons_sim.get_energy_sample(),
         ])
 
         # Apply scaling factors for normalization
