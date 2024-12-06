@@ -7,59 +7,55 @@ from scipy.ndimage import gaussian_filter1d
 
 class WeatherSim(BaseSim):
 
-    def __init__(
-            self,
-            cloud_transition_matrices,
-            noise_transition_matrix,
-            resolution=12,
-            uncertainty_factors=(0.2, 0.1, 0.05),
-            weights=(0.7, 0.4, 0.15),
-            time_steps=24 * 7 * 20
-    ):
+    def __init__(self, cloud_transition_matrices, noise_transition_matrix, resolution=12,
+                 uncertainty_factors=(0.2, 0.1, 0.05), weights=(0.7, 0.4, 0.15), time_steps=24 * 7 * 20,
+                 random_seed=None, forecast_steps=24):
         super().__init__()
         self.cloud_transition_matrices = cloud_transition_matrices
         self.noise_transition_matrix = noise_transition_matrix
         self.resolution = resolution
         self.uncertainty_factors = uncertainty_factors
         self.weights = weights
-        self.time_steps = time_steps
+        self.time_steps = time_steps + forecast_steps
+        self.random_seed = random_seed
+        self.random_state = np.random.RandomState(random_seed)  # Initialize custom RNG
         self.attenuation_series = None
         self.cloud_coverage_series = None
+        self.forecast_steps = forecast_steps
         self.reset()  # 20 weeks
 
     def reset(self):
         super().reset()
-        self.cloud_coverage_series = self._get_cloud_coverage_series()
-        self.attenuation_series = self._get_attenuation_series()
+        self.random_state.seed(self.random_seed)  # Re-seed for reproducibility
+        self.cloud_coverage_series = self._set_cloud_coverage_series()
+        self.attenuation_series = self._set_attenuation_series()
 
     def step(self):
         super().step()
         return (
-            self.cloud_coverage_series[:, self.step_index // self.resolution],
+            self.get_cloud_coverage(),
             self.attenuation_series[self.step_index]
         )
 
-    def _get_cloud_coverage_series(self):
+    def get_cloud_coverage(self):
+        start_index = self.step_index // self.resolution
+        return self.cloud_coverage_series[:, start_index:start_index + self.forecast_steps]
+
+    def _set_cloud_coverage_series(self):
         """
         Simulates cloud coverage states for multiple layers over time.
-
-        Parameters:
-        - transition_matrix_3d (np.ndarray): 3D transition matrix for cloud states.
-        - time_steps (int): Number of time steps to simulate.
-
-        Returns:
-        - list[np.ndarray]: List of cloud states for each layer.
         """
         return np.array([
             simulate_markov_chain(
-                initial_state=np.random.randint(0, 100),
+                initial_state=self.random_state.randint(0, 100),
                 trans_matrix=self.cloud_transition_matrices[layer],
-                steps=self.time_steps
+                steps=self.time_steps,
+                random_state=self.random_state
             ) / 100  # Normalize to [0, 1]
             for layer in range(self.cloud_transition_matrices.shape[0])
         ])
 
-    def _get_attenuation_series(self):
+    def _set_attenuation_series(self):
         """
         Optimized calculation of solar attenuation.
         """
@@ -71,12 +67,12 @@ class WeatherSim(BaseSim):
             for idx, layer in enumerate(smoothed_clouds)
         ]
         noise_states = simulate_markov_chain(
-            np.random.randint(0, 100),
-            self.noise_transition_matrix,
-            len(smoothed_clouds[0])
+            initial_state=self.random_state.randint(0, 100),
+            trans_matrix=self.noise_transition_matrix,
+            steps=len(smoothed_clouds[0]),
+            random_state=self.random_state
         ) / 50 - 1
 
-        # Efficiently aggregate attenuation components
         attenuation_components = [
             smoothed * (noise_states * uncertainty + self.weights[idx])
             for idx, (smoothed, uncertainty) in enumerate(zip(smoothed_clouds, uncertainties))
@@ -84,15 +80,27 @@ class WeatherSim(BaseSim):
         return np.clip(sum(attenuation_components), 0, 1)
 
 
-def simulate_markov_chain(initial_state, trans_matrix, steps=100):
+def simulate_markov_chain(initial_state, trans_matrix, steps=100, random_state=None):
     """
     Simulates a Markov chain using cumulative probabilities for speed.
+
+    Parameters:
+    - initial_state (int): Starting state.
+    - trans_matrix (np.ndarray): Transition probability matrix.
+    - steps (int): Number of steps to simulate.
+    - random_state (np.random.RandomState): RNG for reproducibility.
+
+    Returns:
+    - np.ndarray: Simulated states.
     """
+    if random_state is None:
+        random_state = np.random
+
     cumulative_probs = np.cumsum(trans_matrix, axis=1)  # Precompute cumulative probabilities
     states = np.zeros(steps, dtype=int)
     states[0] = initial_state
 
-    random_values = np.random.random(size=steps - 1)  # Pre-generate random values
+    random_values = random_state.random(size=steps - 1)  # Use provided RNG
     for i in range(1, steps):
         states[i] = np.searchsorted(cumulative_probs[states[i - 1]], random_values[i - 1])
 

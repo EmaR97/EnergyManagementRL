@@ -10,17 +10,13 @@ class TestWeatherSim(TestCase):
         """
         Set up test parameters and initialize a WeatherSim instance.
         """
-        self.cloud_transition_matrices = np.load('/home/emanuele/IdeaProjects/EnergyManagementRL/data/cloud_coverage_transition_matrix_3d.npy')
-        self.noise_transition_matrix = np.load('/home/emanuele/IdeaProjects/EnergyManagementRL/data/noise_transition_matrix.npy')
-        self.sim = WeatherSim(
-            cloud_transition_matrices=self.cloud_transition_matrices,
-            noise_transition_matrix=self.noise_transition_matrix,
-            resolution=12,
-            uncertainty_factors=(0.2, 0.1, 0.05),
-            weights=(0.7, 0.4, 0.15),
-            time_steps=100
-        )
-
+        self.cloud_transition_matrices = np.load(
+            '/home/emanuele/IdeaProjects/EnergyManagementRL/data/cloud_coverage_transition_matrix_3d.npy')
+        self.noise_transition_matrix = np.load(
+            '/home/emanuele/IdeaProjects/EnergyManagementRL/data/noise_transition_matrix.npy')
+        self.sim = WeatherSim(cloud_transition_matrices=self.cloud_transition_matrices,
+                              noise_transition_matrix=self.noise_transition_matrix, resolution=12,
+                              uncertainty_factors=(0.2, 0.1, 0.05), weights=(0.7, 0.4, 0.15), time_steps=100,)
 
     def test_initialization(self):
         """
@@ -29,8 +25,7 @@ class TestWeatherSim(TestCase):
         self.assertIsNotNone(self.sim.cloud_coverage_series)
         self.assertIsNotNone(self.sim.attenuation_series)
         self.assertEqual(len(self.sim.cloud_coverage_series), 3)  # Matches number of cloud layers
-        self.assertEqual(len(self.sim.attenuation_series), 100 * 12)  # Matches time_steps * resolution
-
+        self.assertEqual(len(self.sim.attenuation_series), (100+self.sim.forecast_steps) * 12)  # Matches time_steps * resolution
 
     def test_reset(self):
         """
@@ -42,16 +37,14 @@ class TestWeatherSim(TestCase):
         self.assertFalse(np.array_equal(initial_cloud_series, self.sim.cloud_coverage_series))
         self.assertFalse(np.array_equal(initial_attenuation_series, self.sim.attenuation_series))
 
-
     def test_step(self):
         """
         Test the step method.
         """
-        print(self.sim.cloud_coverage_series[:,0])
         initial_step_index = self.sim.step_index
-        cloud_coverage, attenuation = self.sim.step()
+        (cloud_coverage, attenuation) = self.sim.step()
         self.assertEqual(self.sim.step_index, initial_step_index + 1)
-        self.assertIn(cloud_coverage, self.sim.cloud_coverage_series[:,0])
+        self.assertIn(cloud_coverage, self.sim.cloud_coverage_series[:, :24])
         self.assertIn(attenuation, self.sim.attenuation_series)
 
     def test_step_multiple(self):
@@ -80,3 +73,31 @@ class TestWeatherSim(TestCase):
                 0 <= attenuations[i] <= 1,
                 f"Attenuation out of range at step {i}: {attenuations[i]}"
             )
+
+    def test_reproducibility(self):
+        sim1 = WeatherSim(cloud_transition_matrices=self.cloud_transition_matrices,
+                          noise_transition_matrix=self.noise_transition_matrix, resolution=12,
+                          uncertainty_factors=(0.2, 0.1, 0.05), weights=(0.7, 0.4, 0.15), time_steps=100,
+                          random_seed=42)
+        sim2 = WeatherSim(cloud_transition_matrices=self.cloud_transition_matrices,
+                          noise_transition_matrix=self.noise_transition_matrix, resolution=12,
+                          uncertainty_factors=(0.2, 0.1, 0.05), weights=(0.7, 0.4, 0.15), time_steps=100,
+                          random_seed=42)
+        sim1.reset()
+        sim2.reset()
+
+        for _ in range(10):
+            cloud_coverage_sim1, attenuation_sim1 = sim1.step()
+            cloud_coverage_sim2, attenuation_sim2 = sim2.step()
+            self.assertTrue((cloud_coverage_sim1 == cloud_coverage_sim2).all())
+            self.assertEqual(attenuation_sim1, attenuation_sim2, )
+
+        sim2.random_seed = None
+        sim1.reset()
+        sim2.reset()
+
+        for _ in range(10):
+            cloud_coverage_sim1, attenuation_sim1 = sim1.step()
+            cloud_coverage_sim2, attenuation_sim2 = sim2.step()
+            self.assertFalse((cloud_coverage_sim1 == cloud_coverage_sim2).all())
+            self.assertNotEqual(attenuation_sim1, attenuation_sim2, )
