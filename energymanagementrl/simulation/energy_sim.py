@@ -1,8 +1,8 @@
-
+from .base_sim import BaseSim
 from .utils import min5, day
 
 
-class EnergySim:
+class EnergySim(BaseSim):
     """
     EnergySim simulates energy production or consumption over time based on a provided power series.
     It calculates energy values for each time step and provides sliding 24-hour windowed sums to represent
@@ -17,8 +17,8 @@ class EnergySim:
         max_24h (int): Maximum 24-hour energy, capped at the highest value in `sliding_sum` if not specified.
     """
 
-    def __init__(self, power_series: list[float], max_step: int = None, max_24h: int = None,
-                 daily_sample: int = 6) -> None:
+    def __init__(self, power_series: list[float], max_step: int = None, max_24h: int = None, daily_sample: int = 24,
+                 forecast_steps: int = 24) -> None:
         """
         Initializes the EnergySim instance with given parameters.
 
@@ -27,12 +27,14 @@ class EnergySim:
             max_step (int, optional): Maximum energy allowed per step. Defaults to the max of energy series.
             max_24h (int, optional): Maximum allowed energy over 24 hours. Defaults to the max of sliding sum.
         """
+        super().__init__()
         self.current_energy: int = 0
         self.energy_series: list[float] = [x * min5 for x in power_series]
         self.step_index: int = 0
         self.max_step: int = int(max_step or max(self.energy_series))
         self.sample_size: int = day // daily_sample
-        self.forecast_range = range(0, day * 2, self.sample_size)
+        self.forecast_steps = forecast_steps
+        self.forecast_range =[i * self.sample_size for i in range(self.forecast_steps)]
         self.energy_samples = self._get_sliding_sum()
         self.max_24h: int = int(max_24h or max(self.energy_samples))
 
@@ -44,7 +46,7 @@ class EnergySim:
             list[float]: List of 24-hour sliding average energy values.
         """
         window = self.sample_size
-        expanded_series = self.energy_series + ([0] * (day * 2 + window))
+        expanded_series = self.energy_series + ([0] * ((self.forecast_steps + 1) * window))
         sliding_sum = [sum(expanded_series[i:i + window]) / window
                        for i in range(len(expanded_series) - window + 1)]
 
