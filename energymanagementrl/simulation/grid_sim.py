@@ -1,7 +1,8 @@
+from .base_sim import BaseSim
 from .utils import min5
 
 
-class GridSim:
+class GridSim(BaseSim):
     """
     GridSim simulates grid interaction by managing power flow to and from the grid based on voltage levels,
     energy balance, and grid acceptance limits. It enables modeling of energy exchange between a system
@@ -23,20 +24,8 @@ class GridSim:
     """
 
     def __init__(self, feed_in_max, feed_in_min, voltage_max, voltage_min, max_taken_from, energy_price_sell,
-                 energy_price_buy, voltage_series):
-        """
-        Initializes the GridSim instance with the given parameters.
-
-        Parameters:
-            feed_in_max (float): Maximum power allowed for feeding into the grid.
-            feed_in_min (float): Minimum feed-in power level when voltage is at maximum.
-            voltage_max (float): Maximum voltage level for the grid.
-            voltage_min (float): Minimum voltage level corresponding to max feed-in capacity.
-            max_taken_from (float): Maximum power that can be drawn from the grid.
-            energy_price_sell (float): Price per unit energy for selling to the grid.
-            energy_price_buy (float): Price per unit energy for buying from the grid.
-            voltage_series (list[float]): Series of voltage levels over time.
-        """
+                 energy_price_buy, voltage_series, seed=None):
+        super().__init__(seed)
         self.feed_in_max_known = feed_in_max
         self.feed_in_min = feed_in_min
         self.voltage_max = voltage_max
@@ -47,21 +36,17 @@ class GridSim:
         self.current_feed_to_grid = 0.0
         self.current_taken_from_grid = 0.0
         self.voltage_series = voltage_series
-        self.step_index = 0
         self.power_for_voltage = (
                 (self.feed_in_max_known - self.feed_in_min)
                 / (self.voltage_max - self.voltage_min_known)
         )
 
-    def reset(self):
-        """
-        Resets the simulation, clearing the current feed and draw values and setting the step index to zero.
-        """
-        self.step_index = 0
+    def reset(self, seed=None):
+        super().reset(seed)
         self.current_feed_to_grid = 0
         self.current_taken_from_grid = 0
 
-    def step(self, energy_balance: float) -> int:
+    def step(self, energy_balance, **inputs) -> int:
         """
         Simulates one step of energy balance interaction with the grid.
         Positive energy balance indicates surplus energy to feed into the grid, while
@@ -73,10 +58,9 @@ class GridSim:
         Returns:
             int: Remaining energy balance after adjusting for feed-in or draw from the grid.
         """
-        self.current_feed_to_grid = 0
-        self.current_taken_from_grid = 0
-        self.step_index += 1
-
+        super().step(**inputs)
+        self.current_feed_to_grid=0
+        self.current_taken_from_grid=0
         if energy_balance > 0:  # Surplus energy
             self.current_feed_to_grid = min(energy_balance, int(self.get_grid_acceptance()))
             energy_balance -= self.current_feed_to_grid
@@ -129,3 +113,6 @@ class GridSim:
             float: Power currently drawn from the grid.
         """
         return self.current_taken_from_grid
+
+    def get_state(self):
+        return {'feed_to_grid':self.current_feed_to_grid, 'taken_from_grid':self.current_taken_from_grid}

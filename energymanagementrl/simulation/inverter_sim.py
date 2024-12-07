@@ -1,17 +1,18 @@
 import numpy as np
 import pandas as pd
 
+from .base_sim import BaseSim
 from .battery_sim import BatterySim
 from .consumption_sim import ConsumptionSim
 from .energy_sim import EnergySim
 from .grid_sim import GridSim
-from .weather_sim import WeatherSim
+from .production_sim import ProductionSim
 
 MODE_A = 1
 MODE_B = 0
 
 
-class InverterSim:
+class InverterSim(BaseSim):
     """
     InverterSim models the operation of an energy inverter system with energy production,
     consumption, battery storage, and grid interaction. The simulation offers two operation modes:
@@ -30,12 +31,12 @@ class InverterSim:
 
     def __init__(
             self,
-            prod_sim: EnergySim,
+            prod_sim: ProductionSim,
             cons_sim: ConsumptionSim,
             batt_sim: BatterySim,
             grid_sim: GridSim,
-            weather_sim: WeatherSim,
             timestamps: pd.Series,
+            seed=None,
     ):
         """
         Initializes the InverterSim with energy production, consumption, battery, grid simulations, and timestamps.
@@ -47,11 +48,11 @@ class InverterSim:
             grid_sim (GridSim): Instance for handling grid interactions.
             timestamps (pd.Series): Series of timestamps corresponding to each simulation step.
         """
+        super().__init__(seed)
         self.prod_sim = prod_sim
         self.cons_sim = cons_sim
         self.batt_sim = batt_sim
         self.grid_sim = grid_sim
-        self.weather_sim = weather_sim
         self.timestamps = timestamps
         self.current_step = 0
 
@@ -72,27 +73,17 @@ class InverterSim:
             time_steps.append(sin_cos)
         return np.array(time_steps)
 
-    def get_timestep(self) -> np.ndarray:
-        """
-        Retrieves the precomputed sine and cosine values for the current time step.
-
-        Returns:
-            np.ndarray: Array with the sine and cosine values for the current step.
-        """
-        return self.precomputed_time_steps[self.current_step]
-
-    def reset(self) -> None:
+    def reset(self, seed=None) -> None:
         """
         Resets the simulation state to the starting conditions, resetting all components.
         """
-        self.current_step = 0
-        self.batt_sim.reset()
-        self.grid_sim.reset()
-        self.prod_sim.reset()
-        self.cons_sim.reset()
-        self.weather_sim.reset()
+        super().reset(seed)
+        self.batt_sim.reset(seed)
+        self.grid_sim.reset(seed)
+        self.prod_sim.reset(seed)
+        self.cons_sim.reset(seed)
 
-    def step(self, action: int) -> int:
+    def step(self, action: int, **inputs) -> None:
         """
         Advances the simulation by one step and adjusts energy balance based on the chosen operation mode.
 
@@ -102,18 +93,16 @@ class InverterSim:
         Returns:
             int: Remaining energy balance after the step.
         """
+        super().step(**inputs)
         self.current_step += 1
-        energy_balance = self.prod_sim.step() * (
-                    1 - self.weather_sim.step()) - self.cons_sim.step()  # Net energy (production - consumption)
+        energy_balance = self.prod_sim.step() - self.cons_sim.step()  # Net energy (production - consumption)
 
         if action == MODE_A:  # Mode A (Max-Self-Consumption)
-            energy_balance = self._manage_energy_mode_a(energy_balance)
+            self._manage_energy_mode_a(energy_balance)
         elif action == MODE_B:  # Mode B (Full-Feed-to-Grid)
-            energy_balance = self._manage_energy_mode_b(energy_balance)
+            self._manage_energy_mode_b(energy_balance)
 
-        return energy_balance
-
-    def _manage_energy_mode_a(self, energy_balance: int) -> int:
+    def _manage_energy_mode_a(self, energy_balance: int):
         """
         Manages energy flow in Mode A (Max-Self-Consumption), prioritizing:
         1. Balancing production and consumption.
@@ -126,9 +115,9 @@ class InverterSim:
         Returns:
             int: Adjusted energy balance after managing battery and grid interaction.
         """
-        return self.grid_sim.step(self.batt_sim.step(energy_balance))
+        self.grid_sim.step(self.batt_sim.step(energy_balance))
 
-    def _manage_energy_mode_b(self, energy_balance: int) -> int:
+    def _manage_energy_mode_b(self, energy_balance: int):
         """
         Manages energy flow in Mode B (Full-Feed-to-Grid), prioritizing:
         1. Balancing production and consumption.
@@ -147,7 +136,15 @@ class InverterSim:
         energy_balance_after_batt = self.batt_sim.step(energy_balance)  # Battery handles excess or deficit
 
         if energy_balance_after_batt >= 0:  # If additional load can be satisfied
-            return self.grid_sim.step(grid_acceptance)
+            self.grid_sim.step(grid_acceptance)
         else:  # If load can't be fully satisfied, adjust balance to provide available energy
             adjusted_balance = grid_acceptance + energy_balance_after_batt
-            return self.grid_sim.step(adjusted_balance)
+            self.grid_sim.step(adjusted_balance)
+
+    def get_state(self):
+        return {
+            'prod_sim':self.prod_sim.get_state(),
+            'cons_sim':self.cons_sim.get_state(),
+            'batt_sim':self.batt_sim.get_state(),
+            'grid_sim':self.grid_sim.get_state()
+        }

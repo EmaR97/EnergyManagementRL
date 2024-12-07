@@ -9,30 +9,23 @@ class WeatherSim(BaseSim):
 
     def __init__(self, cloud_transition_matrices, noise_transition_matrix, resolution=12,
                  uncertainty_factors=(0.2, 0.1, 0.05), weights=(0.7, 0.4, 0.15), time_steps=24 * 7 * 20,
-                 random_seed=None, forecast_steps=24):
-        super().__init__()
+                 forecast_steps=24, seed=None):
+        super().__init__(seed)
         self.cloud_transition_matrices = cloud_transition_matrices
         self.noise_transition_matrix = noise_transition_matrix
         self.resolution = resolution
         self.uncertainty_factors = uncertainty_factors
         self.weights = weights
         self.time_steps = time_steps + forecast_steps
-        self.random_seed = random_seed
-        self.random_state = np.random.RandomState(random_seed)  # Initialize custom RNG
         self.attenuation_series = None
         self.cloud_coverage_series = None
         self.forecast_steps = forecast_steps
         self.reset()  # 20 weeks
 
-    def reset(self):
-        super().reset()
-        self.random_state.seed(self.random_seed)  # Re-seed for reproducibility
+    def reset(self, seed=None):
+        super().reset(seed)
         self.cloud_coverage_series = self._set_cloud_coverage_series()
         self.attenuation_series = self._set_attenuation_series()
-
-    def step(self):
-        super().step()
-        return self.get_attenuation()
 
     def get_attenuation(self):
         return self.attenuation_series[self.step_index]
@@ -40,6 +33,9 @@ class WeatherSim(BaseSim):
     def get_cloud_coverage(self):
         start_index = self.step_index // self.resolution
         return self.cloud_coverage_series[:, start_index:start_index + self.forecast_steps]
+
+    def get_state(self):
+        return {f"cloud_coverage_{i}": value for i, value in enumerate(self.get_cloud_coverage().flatten())}
 
     def _set_cloud_coverage_series(self):
         """

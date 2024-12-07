@@ -1,5 +1,5 @@
 from .battery_sim import BatterySim
-from .energy_sim import EnergySim
+from .production_sim import ProductionSim
 from .grid_sim import GridSim
 from .inverter_sim import InverterSim
 from .consumption_sim import ConsumptionSim

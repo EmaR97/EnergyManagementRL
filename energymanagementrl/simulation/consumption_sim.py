@@ -9,29 +9,29 @@ class ConsumptionSim(EnergySim):
     recent energy activity.
 
     Attributes:
-        current_energy (int): Energy at the current time step.
         energy_series (list[float]): Series of energy values based on input power series, adjusted by `min5` factor.
         step_index (int): Index of the current step in the energy series.
-        max_step (int): Maximum energy per step, capped at the highest value in `energy_series` if not specified.
         energy_samples (list[float]): Sliding 24-hour energy sums calculated from `energy_series`.
-        max_24h (int): Maximum 24-hour energy, capped at the highest value in `sliding_sum` if not specified.
     """
 
-    def __init__(self, power_series: list[float], max_step: int = None, max_24h: int = None,
-                 daily_sample: int = 6) -> None:
+    def __init__(self, power_series: list[float],
+                 daily_sample: int = 24, forecast_steps: int = 24, seed=None) -> None:
         """
         Initializes the EnergySim instance with given parameters.
 
         Parameters:
             power_series (list[float]): List of power values for each time step.
-            max_step (int, optional): Maximum energy allowed per step. Defaults to the max of energy series.
-            max_24h (int, optional): Maximum allowed energy over 24 hours. Defaults to the max of sliding sum.
         """
-        super().__init__(power_series, max_step, max_24h, daily_sample)
+        super().__init__(power_series, daily_sample, forecast_steps, seed)
         history = SmoothedHistory(12, self.forecast_steps * self.sample_size)
 
         self.energy_samples = [history.get_smoothed_history(sample, self.forecast_range) for sample in
                                self.energy_series]
+
+    def step(self, **inputs):
+        super().step(**inputs)
+        return self.get_energy()
+
 
     def get_energy_sample(self) -> list[int]:
         """
@@ -40,5 +40,4 @@ class ConsumptionSim(EnergySim):
         Returns:
             int: Estimated energy for the next 24 hours.
         """
-
         return self.energy_samples[self.step_index]

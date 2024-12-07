@@ -1,6 +1,8 @@
 import numpy as np
 from gymnasium import spaces
 import gymnasium as gym
+
+from .utils import extract_values_gen, flatten_dict
 from ..simulation import InverterSim, week
 
 
@@ -10,7 +12,6 @@ class InverterEnv(gym.Env):
     It provides a state space for training agents to optimize energy usage, battery wear, and grid interaction.
 
     Attributes:
-        state_names (list): List of state variable names for tracking various energy and time-related metrics.
         inverter_sim (InverterSim): Instance of the InverterSim simulation model.
         max_steps (int): Maximum number of steps per episode.
         current_step (int): Index for tracking the current simulation step.
@@ -25,28 +26,10 @@ class InverterEnv(gym.Env):
         inv_factors (np.ndarray): Scaling factors for normalizing state values.
     """
 
-    state_names = [
-        "prod_energy",
-        "cons_energy",
-        "batt_charge_rate",
-        "batt_discharge_rate",
-        "batt_stored",
-        "grid_feed_to",
-        "grid_taken_from",
-        "prod_energy_next_4h",
-        "cons_energy_next_4h",
-        'last_action',
-        'reward',
-        'reward_energy_sold',
-        'penalty_energy_purchase',
-        'penalty_battery_wear'
-    ]
-
     def __init__(
             self,
             inverter_sim: InverterSim,
             max_steps: int = week,
-            normalize: bool = False,
     ):
         """
         Initializes the environment for inverter simulation.
@@ -54,11 +37,10 @@ class InverterEnv(gym.Env):
         Parameters:
             inverter_sim (InverterSim): Simulation model of an inverter system.
             max_steps (int): Maximum steps allowed in an episode (default: one week).
-            normalize (bool): Whether to normalize state values.
         """
         super(InverterEnv, self).__init__()
-        self.state_size = 224
         self.inverter_sim = inverter_sim
+        self.state_size = len(list(extract_values_gen(self.inverter_sim.get_state())))
         self.max_steps = max_steps
         self.current_step = 0
         self.action_space = spaces.Discrete(2)  # Two actions: grid-feeding or self-consumption
@@ -84,8 +66,8 @@ class InverterEnv(gym.Env):
         """
         self.state = np.zeros(self.state_size)
         self.current_step = 0
-        self.inverter_sim.weather_sim.time_steps = self.max_steps
-        self.inverter_sim.reset()
+        self.inverter_sim.prod_sim.w_sim.time_steps = self.max_steps
+        self.inverter_sim.reset(seed if seed != 0 else None)
         self.last_action = 0
         return self.state, {}
 
@@ -114,28 +96,18 @@ class InverterEnv(gym.Env):
         Updates the state by retrieving current values from the inverter simulation
         and applying normalization if specified.
         """
-        values = np.array([
-            self.inverter_sim.prod_sim.get_energy(),
-            self.inverter_sim.cons_sim.get_energy(),
-            self.inverter_sim.batt_sim.get_charge_rate(),
-            self.inverter_sim.batt_sim.get_discharge_rate(),
-            self.inverter_sim.batt_sim.get_stored(),
-            self.inverter_sim.grid_sim.get_feed_to(),
-            self.inverter_sim.grid_sim.get_taken_from(),
-            *self.inverter_sim.prod_sim.get_energy_sample(),
-            *self.inverter_sim.cons_sim.get_energy_sample(),
-            self.inverter_sim.weather_sim.get_attenuation(),
-            *self.inverter_sim.weather_sim.get_cloud_coverage().flatten(),
-
-        ])
-
+        values = np.array(list(extract_values_gen(self.inverter_sim.get_state())))
         # Apply scaling factors for normalization
-        scaled_values = values * self.inv_factors
-        # Append precomputed sine and cosine values
-        self.state = np.concatenate([
-            scaled_values,
-            # self.inverter_sim.get_timestep()
-        ])
+        self.state = values * self.inv_factors
+
+    def get_state_dict(self):
+        state = dict(flatten_dict(self.inverter_sim.get_state()))
+        state = {key: value / 1000 for key, value in state.items()}
+        state['reward_energy_sold'] = self.reward_energy_sold
+        state['penalty_energy_purchase'] = self.penalty_energy_purchase
+        state['penalty_battery_wear'] = self.penalty_battery_wear
+        state['reward'] = self.reward
+        return state
 
     def set_reward(self) -> float:
         """
@@ -177,19 +149,6 @@ class InverterEnv(gym.Env):
                     self.inverter_sim.batt_sim.battery_wear_rate)
         else:
             self.penalty_battery_wear = 0
-
-    def get_state_dict(self) -> dict:
-        """
-        Returns the current state as a dictionary with named state variables for better readability.
-
-        Returns:
-            dict: Dictionary with state variable names and corresponding values.
-        """
-        return dict(
-            zip(self.state_names,
-                self.state.tolist()[:9] + [self.last_action, self.reward, self.reward_energy_sold,
-                                           self.penalty_energy_purchase, self.penalty_battery_wear])
-        )
 
 
 class InverterEnvSimple(InverterEnv):

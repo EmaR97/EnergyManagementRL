@@ -1,7 +1,8 @@
+from .base_sim import BaseSim
 from .utils import min5
 
 
-class BatterySim:
+class BatterySim(BaseSim):
     """
     BatterySim models a battery with basic charging, discharging, and efficiency properties.
     It provides methods to simulate charging/discharging steps based on an energy balance input
@@ -20,7 +21,7 @@ class BatterySim:
     """
 
     def __init__(self, max_charge_rate: int, max_discharge_rate: int, capacity: int, battery_wear_rate: float,
-                 efficiency: float = 0.95, current_charge: float = 0):
+                 efficiency: float = 0.95, starting_charge: float = None, seed=None):
         """
         Initializes the BatterySim instance with given parameters.
 
@@ -30,27 +31,35 @@ class BatterySim:
             capacity (int): Battery's total energy capacity in kWh.
             battery_wear_rate (float): Wear rate of the battery over time (unitless).
             efficiency (float): Efficiency of charge/discharge processes (default: 0.95).
-            current_charge (float): Initial stored energy in the battery (kWh).
+            starting_charge (float): Initial stored energy in the battery (kWh).
         """
+        super().__init__(seed)
+
+        self.current_charge = None
         self.max_charge_rate = max_charge_rate
         self.max_discharge_rate = max_discharge_rate
         self.capacity = capacity
         self.battery_wear_rate = battery_wear_rate
         self.efficiency = efficiency
-        self.starting_charge = current_charge
-        self.current_charge = current_charge
+        self.starting_charge = starting_charge
+        self.set_starting_charge()
         self.current_charge_rate = 0.0
         self.current_discharge_rate = 0.0
 
-    def reset(self):
+    def set_starting_charge(self):
+        self.current_charge = self.random_state.randint(0, self.capacity) \
+            if self.starting_charge is None else self.starting_charge
+
+    def reset(self, seed=None):
         """
         Resets the battery to its starting charge and clears charge and discharge rates.
         """
-        self.current_charge = int(self.starting_charge)
+        super().reset(seed)
+        self.set_starting_charge()
         self.current_charge_rate = 0
         self.current_discharge_rate = 0
 
-    def step(self, energy_balance: int) -> int:
+    def step(self, energy_balance: int, **inputs) -> int:
         """
         Simulates a single step of battery behavior based on an energy balance input.
 
@@ -60,6 +69,7 @@ class BatterySim:
         Returns:
             int: Remaining energy balance after charge or discharge has been applied.
         """
+        super().step(**inputs)
         self.current_charge_rate = 0.0
         self.current_discharge_rate = 0.0
 
@@ -130,3 +140,7 @@ class BatterySim:
             int: Stored energy in kWh.
         """
         return int(self.current_charge)
+
+    def get_state(self):
+        return {'stored': self.get_stored(), 'charge_rate': self.get_charge_rate(),
+                'discharge_rate': self.get_discharge_rate()}

@@ -1,26 +1,40 @@
+from abc import abstractmethod
+
+import numpy as np
+
+
 class BaseSim:
-    """
-    BaseSim serves as the foundation for all simulation classes, providing common functionality
-    like state tracking, reset logic, and stepping through simulation time.
-
-    Attributes:
-        step_index (int): Tracks the current step in the simulation.
-    """
-
-    def __init__(self):
+    def __init__(self, seed=None):
         """
-        Initializes the base simulation with a default step index.
+        Initialize the simulation.
+
+        Args:
+            seed (int, optional): An optional seed for randomization or state initialization.
         """
         self.step_index = 0
+        self.random_seed = seed
+        self.random_state = np.random.RandomState(self.random_seed)
 
-    def reset(self):
+    def reset(self, seed=None):
         """
-        Resets the simulation to the initial state.
+        Reset the simulation to its initial state.
+
+        Args:
+            seed (int, optional): An optional seed for randomization or state initialization.
         """
+        self.random_seed = seed
+        self.random_state = np.random.RandomState(self.random_seed)
         self.step_index = 0
 
-    def step(self):
+    def step(self, **inputs):
         """
-        Advances the simulation by one time step. This method should be overridden by subclasses.
+        Advance the simulation by one step.
+
+        Args:
+            inputs (any): Inputs affecting the simulation state.
         """
         self.step_index += 1
+
+    @abstractmethod
+    def get_state(self):
+        pass
