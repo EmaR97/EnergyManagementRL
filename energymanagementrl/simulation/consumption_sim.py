@@ -1,5 +1,5 @@
-from . import EnergySim
-from scipy.ndimage import gaussian_filter1d
+from .energy_sim import EnergySim
+from .utils import SmoothedHistory
 
 
 class ConsumptionSim(EnergySim):
@@ -28,7 +28,9 @@ class ConsumptionSim(EnergySim):
             max_24h (int, optional): Maximum allowed energy over 24 hours. Defaults to the max of sliding sum.
         """
         super().__init__(power_series, max_step, max_24h, daily_sample)
-        self.energy_samples = [get_smoothed_history(sample, self.forecast_range, self.forecast_steps*self.sample_size) for sample in
+        history = SmoothedHistory(12, self.forecast_steps * self.sample_size)
+
+        self.energy_samples = [history.get_smoothed_history(sample, self.forecast_range) for sample in
                                self.energy_series]
 
     def get_energy_sample(self) -> list[int]:
@@ -40,16 +42,3 @@ class ConsumptionSim(EnergySim):
         """
 
         return self.energy_samples[self.step_index]
-
-
-buffer = []
-sigma = 12
-
-
-def get_smoothed_history(new_point, _range, steps):
-    global buffer
-    if not len(buffer):
-        buffer = [new_point] * steps
-    buffer.append(new_point)
-    buffer.pop(0)
-    return [gaussian_filter1d(buffer, sigma=sigma).tolist()[i] for i in _range]
