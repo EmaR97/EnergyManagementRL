@@ -32,10 +32,10 @@ class WeatherSim(BaseSim):
 
     def step(self):
         super().step()
-        return (
-            self.get_cloud_coverage(),
-            self.attenuation_series[self.step_index]
-        )
+        return self.get_attenuation()
+
+    def get_attenuation(self):
+        return self.attenuation_series[self.step_index]
 
     def get_cloud_coverage(self):
         start_index = self.step_index // self.resolution

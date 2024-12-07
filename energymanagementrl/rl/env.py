@@ -57,21 +57,20 @@ class InverterEnv(gym.Env):
             normalize (bool): Whether to normalize state values.
         """
         super(InverterEnv, self).__init__()
-
+        self.state_size = 224
         self.inverter_sim = inverter_sim
         self.max_steps = max_steps
         self.current_step = 0
         self.action_space = spaces.Discrete(2)  # Two actions: grid-feeding or self-consumption
-        self.observation_space = spaces.Box(low=0, high=1000, shape=(31,), dtype=np.float64)
-        self.state = np.zeros(31)
+        self.observation_space = spaces.Box(low=0, high=1000, shape=(self.state_size,), dtype=np.float64)
+        self.state = np.zeros(self.state_size)
         self.last_action = 0
         self.reward_energy_sold = 0
         self.penalty_energy_purchase = 0
         self.penalty_battery_wear = 0
         self.reward = 0
-
         # Precompute normalization factors
-        self.inv_factors = np.array([1 / 1000] * 31)
+        self.inv_factors = np.array([1 / 1000] * self.state_size)
 
     def reset(self, seed=0, **kwargs):
         """
@@ -83,8 +82,9 @@ class InverterEnv(gym.Env):
         Returns:
             tuple: Initial state and an empty info dictionary.
         """
-        self.state = np.zeros(31)
+        self.state = np.zeros(self.state_size)
         self.current_step = 0
+        self.inverter_sim.weather_sim.time_steps = self.max_steps
         self.inverter_sim.reset()
         self.last_action = 0
         return self.state, {}
@@ -124,6 +124,9 @@ class InverterEnv(gym.Env):
             self.inverter_sim.grid_sim.get_taken_from(),
             *self.inverter_sim.prod_sim.get_energy_sample(),
             *self.inverter_sim.cons_sim.get_energy_sample(),
+            self.inverter_sim.weather_sim.get_attenuation(),
+            *self.inverter_sim.weather_sim.get_cloud_coverage().flatten(),
+
         ])
 
         # Apply scaling factors for normalization
@@ -133,7 +136,6 @@ class InverterEnv(gym.Env):
             scaled_values,
             # self.inverter_sim.get_timestep()
         ])
-
 
     def set_reward(self) -> float:
         """
@@ -186,7 +188,7 @@ class InverterEnv(gym.Env):
         return dict(
             zip(self.state_names,
                 self.state.tolist()[:9] + [self.last_action, self.reward, self.reward_energy_sold,
-                                       self.penalty_energy_purchase, self.penalty_battery_wear])
+                                           self.penalty_energy_purchase, self.penalty_battery_wear])
         )
 
 

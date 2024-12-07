@@ -5,6 +5,7 @@ from .battery_sim import BatterySim
 from .consumption_sim import ConsumptionSim
 from .energy_sim import EnergySim
 from .grid_sim import GridSim
+from .weather_sim import WeatherSim
 
 MODE_A = 1
 MODE_B = 0
@@ -33,6 +34,7 @@ class InverterSim:
             cons_sim: ConsumptionSim,
             batt_sim: BatterySim,
             grid_sim: GridSim,
+            weather_sim: WeatherSim,
             timestamps: pd.Series,
     ):
         """
@@ -49,6 +51,7 @@ class InverterSim:
         self.cons_sim = cons_sim
         self.batt_sim = batt_sim
         self.grid_sim = grid_sim
+        self.weather_sim = weather_sim
         self.timestamps = timestamps
         self.current_step = 0
 
@@ -87,6 +90,7 @@ class InverterSim:
         self.grid_sim.reset()
         self.prod_sim.reset()
         self.cons_sim.reset()
+        self.weather_sim.reset()
 
     def step(self, action: int) -> int:
         """
@@ -99,7 +103,8 @@ class InverterSim:
             int: Remaining energy balance after the step.
         """
         self.current_step += 1
-        energy_balance = self.prod_sim.step() - self.cons_sim.step()  # Net energy (production - consumption)
+        energy_balance = self.prod_sim.step() * (
+                    1 - self.weather_sim.step()) - self.cons_sim.step()  # Net energy (production - consumption)
 
         if action == MODE_A:  # Mode A (Max-Self-Consumption)
             energy_balance = self._manage_energy_mode_a(energy_balance)

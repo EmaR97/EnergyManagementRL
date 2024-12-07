@@ -18,7 +18,7 @@ class EnergySim(BaseSim):
     """
 
     def __init__(self, power_series: list[float], max_step: int = None, max_24h: int = None, daily_sample: int = 24,
-                 forecast_steps: int = 24) -> None:
+                 forecast_steps: int = 24,) -> None:
         """
         Initializes the EnergySim instance with given parameters.
 
