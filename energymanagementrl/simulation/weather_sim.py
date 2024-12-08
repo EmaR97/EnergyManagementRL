@@ -1,3 +1,4 @@
+from .utils  import sparse_matrix
 from .base_sim import BaseSim
 
 import numpy as np
@@ -35,7 +36,7 @@ class WeatherSim(BaseSim):
         return self.cloud_coverage_series[:, start_index:start_index + self.forecast_steps]
 
     def get_state(self):
-        return {f"cloud_coverage_{i}": value for i, value in enumerate(self.get_cloud_coverage().flatten())}
+        return {f"cloud_coverage_{i}": value for i, value in enumerate((self.get_cloud_coverage() @ sparse_matrix).flatten())}
 
     def _set_cloud_coverage_series(self):
         """

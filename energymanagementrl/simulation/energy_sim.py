@@ -45,6 +45,6 @@ class EnergySim(BaseSim):
         pass
 
     def get_state(self):
-        state = {f"cloud_coverage_{i}": value for i, value in enumerate(self.get_energy_sample())}
+        state = {f"energy_sample_{i}": value for i, value in enumerate(self.get_energy_sample())}
         state['energy'] = self.get_energy()
         return state

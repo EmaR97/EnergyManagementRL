@@ -1,3 +1,6 @@
+import numpy as np
+
+from .utils import sparse_matrix
 from .energy_sim import EnergySim
 from .weather_sim import WeatherSim
 
@@ -61,7 +64,9 @@ class ProductionSim(EnergySim):
         return [int(self.energy_samples[self.step_index + i]) for i in self.forecast_range]
 
     def get_state(self):
-        state = super().get_state()
+        state = {f"energy_sample_{i}": value for i, value in
+                 enumerate(np.array(self.get_energy_sample()) @ sparse_matrix)}
+        state['energy'] = self.get_energy()
         if self.w_sim is not None:
             state['w_sim'] = self.w_sim.get_state()
         return state
