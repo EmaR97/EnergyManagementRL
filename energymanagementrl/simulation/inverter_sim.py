@@ -25,7 +25,6 @@ class InverterSim(BaseSim):
         batt_sim (BatterySim): Battery simulation for energy storage.
         grid_sim (GridSim): Simulation of grid interaction.
         timestamps (pd.Series): Series of timestamps for each simulation step.
-        current_step (int): Index tracking the current simulation step.
         precomputed_time_steps (np.ndarray): Array of precomputed sine and cosine values for each timestep.
     """
 
@@ -49,12 +48,12 @@ class InverterSim(BaseSim):
             timestamps (pd.Series): Series of timestamps corresponding to each simulation step.
         """
         super().__init__(seed)
+        self.energy_balance = 0
         self.prod_sim = prod_sim
         self.cons_sim = cons_sim
         self.batt_sim = batt_sim
         self.grid_sim = grid_sim
         self.timestamps = timestamps
-        self.current_step = 0
 
         # Precompute sine and cosine values for each timestep
         self.precomputed_time_steps = self._precompute_time_steps()
@@ -94,13 +93,12 @@ class InverterSim(BaseSim):
             int: Remaining energy balance after the step.
         """
         super().step(**inputs)
-        self.current_step += 1
         energy_balance = self.prod_sim.step() - self.cons_sim.step()  # Net energy (production - consumption)
-
         if action == MODE_A:  # Mode A (Max-Self-Consumption)
-            self._manage_energy_mode_a(energy_balance)
+            energy_balance = self._manage_energy_mode_a(energy_balance)
         elif action == MODE_B:  # Mode B (Full-Feed-to-Grid)
-            self._manage_energy_mode_b(energy_balance)
+            energy_balance = self._manage_energy_mode_b(energy_balance)
+        self.energy_balance = energy_balance
 
     def _manage_energy_mode_a(self, energy_balance: int):
         """
@@ -115,7 +113,7 @@ class InverterSim(BaseSim):
         Returns:
             int: Adjusted energy balance after managing battery and grid interaction.
         """
-        self.grid_sim.step(self.batt_sim.step(energy_balance))
+        return self.grid_sim.step(self.batt_sim.step(energy_balance))
 
     def _manage_energy_mode_b(self, energy_balance: int):
         """
@@ -136,15 +134,17 @@ class InverterSim(BaseSim):
         energy_balance_after_batt = self.batt_sim.step(energy_balance)  # Battery handles excess or deficit
 
         if energy_balance_after_batt >= 0:  # If additional load can be satisfied
-            self.grid_sim.step(grid_acceptance)
+            return self.grid_sim.step(grid_acceptance)
         else:  # If load can't be fully satisfied, adjust balance to provide available energy
             adjusted_balance = grid_acceptance + energy_balance_after_batt
-            self.grid_sim.step(adjusted_balance)
+            return self.grid_sim.step(adjusted_balance)
 
     def get_state(self):
-        return {
-            'prod_sim':self.prod_sim.get_state(),
-            'cons_sim':self.cons_sim.get_state(),
-            'batt_sim':self.batt_sim.get_state(),
-            'grid_sim':self.grid_sim.get_state()
+        state = {
+            'prod_sim': self.prod_sim.get_state(),
+            'cons_sim': self.cons_sim.get_state(),
+            'batt_sim': self.batt_sim.get_state(),
+            'grid_sim': self.grid_sim.get_state()
         }
+        state['prod_sim']['energy'] -= self.energy_balance
+        return state
