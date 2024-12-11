@@ -66,7 +66,8 @@ class InverterEnv(gym.Env):
         """
         self.state = np.zeros(self.state_size)
         self.current_step = 0
-        self.inverter_sim.prod_sim.w_sim.time_steps = self.max_steps
+        if self.inverter_sim.prod_sim.w_sim:
+            self.inverter_sim.prod_sim.w_sim.time_steps = self.max_steps
         self.inverter_sim.reset(seed if seed != 0 else None)
         self.last_action = 0
         return self.state, {}

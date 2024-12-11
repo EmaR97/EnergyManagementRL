@@ -30,16 +30,28 @@ def run_energy_production_prediction(
         raise ValueError()
     return run_simulation(mc, system, weather_data[:])
 
+def plot_results(results_df: pd.DataFrame) -> None:
+    """
+    Plots the results from a DataFrame as a line plot.
 
-def plot_results(
-        results_df: pd.DataFrame
-) -> None:
-    plt.figure()
-    results_df.plot(kind='line')
+    Args:
+        results_df (pd.DataFrame): A DataFrame containing the data to plot.
+                                   The index should represent the x-axis (e.g., time).
+    """
+    # Line plot of the DataFrame
+    ax = results_df.plot(kind='line', figsize=(20, 6))
+
+    # Labeling and formatting
+    plt.xlabel('Time')
     plt.ylabel('System Output (kW)')
-    plt.legend()
-    plt.grid()
+    plt.title('System Output Over Time')
+    plt.legend(title='Variables', loc='upper left', bbox_to_anchor=(1.0, 1.0))
+    plt.grid(visible=True, linestyle='--', linewidth=0.5)
+
+    # Display the plot
+    plt.tight_layout()
     plt.show()
+
 
 
 def analyze_production(
