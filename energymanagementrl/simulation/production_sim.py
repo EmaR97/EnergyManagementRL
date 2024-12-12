@@ -19,6 +19,7 @@ class ProductionSim(EnergySim):
             power_series (list[float]): List of power values for each time step.
         """
         super().__init__(power_series, daily_sample, forecast_steps, seed)
+        self.energy_series = self.energy_series + self.energy_series[-forecast_steps * self.sample_size:]
         self.forecast_steps = forecast_steps
         self.forecast_range = [i * self.sample_size for i in range(self.forecast_steps)]
 
@@ -97,6 +98,7 @@ class ProductionSimWithError(ProductionSim):
                  ) -> None:
         super().__init__(power_series, daily_sample, forecast_steps, seed)
         self.optimal_power_series = [x * min5 for x in optimal_power_series]
+        self.optimal_power_series = self.optimal_power_series + self.optimal_power_series[-forecast_steps * self.sample_size:]
         self.error_divisor = error_divisor
         self.precomputed_energy = []
         self.residual_series = []
