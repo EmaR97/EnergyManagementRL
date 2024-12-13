@@ -13,9 +13,9 @@ class BaseSim:
         """
         self.step_index = 0
         self.random_seed = seed
-        self.random_state = np.random.RandomState(self.random_seed)
+        self.random_state: np.random.RandomState = np.random.RandomState(self.random_seed)
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, **kwargs):
         """
         Reset the simulation to its initial state.
 

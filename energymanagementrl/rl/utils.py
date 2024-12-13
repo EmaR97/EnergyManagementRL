@@ -3,9 +3,9 @@ import pandas as pd
 
 
 
-def test_plot(env, model, steps, to_show=None, seed=None):
+def test_plot(env, model, steps, to_show=None, seed=None, ):
     state_history = []
-    obs, _ = env.reset(seed)
+    obs, _ = env.reset(seed, shuffle=True)
     for _ in range(steps):
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, done, _, _ = env.step(action)

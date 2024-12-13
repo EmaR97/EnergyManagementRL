@@ -58,6 +58,11 @@ class InverterSim(BaseSim):
         # Precompute sine and cosine values for each timestep
         self.precomputed_time_steps = self._precompute_time_steps()
 
+    def check_max_steps(self, max_steps):
+        self.prod_sim.check_max_steps(max_steps)
+        self.cons_sim.check_max_steps(max_steps)
+        self.grid_sim.check_max_steps(max_steps)
+
     def _precompute_time_steps(self) -> np.ndarray:
         """
         Precomputes normalized sine and cosine values for each timestamp to simulate time-dependent behavior.
@@ -72,15 +77,15 @@ class InverterSim(BaseSim):
             time_steps.append(sin_cos)
         return np.array(time_steps)
 
-    def reset(self, seed=None) -> None:
+    def reset(self, seed=None, **kwargs) -> None:
         """
         Resets the simulation state to the starting conditions, resetting all components.
         """
         super().reset(seed)
-        self.batt_sim.reset(seed)
-        self.grid_sim.reset(seed)
-        self.prod_sim.reset(seed)
-        self.cons_sim.reset(seed)
+        self.batt_sim.reset(seed, **kwargs)
+        self.grid_sim.reset(seed, **kwargs)
+        self.prod_sim.reset(seed, **kwargs)
+        self.cons_sim.reset(seed, **kwargs)
 
     def step(self, action: int, **inputs) -> None:
         """
@@ -139,6 +144,19 @@ class InverterSim(BaseSim):
         energy_balance_after_batt = self.batt_sim.step(energy_balance)  # Battery handles steps excess or deficit
         energy_balance_after_batt += grid_acceptance
         return energy_balance_after_batt, self.grid_sim.step(energy_balance_after_batt)
+
+    def random_start(self, max_steps):
+        allowed_max_steps = min(
+            self.grid_sim.get_allowed_max_steps(),
+            self.cons_sim.get_allowed_max_steps(),
+            self.prod_sim.get_allowed_max_steps()
+        )
+        allowed_max_steps -= max_steps + 2
+        if allowed_max_steps > 0:
+            starting_step = self.random_state.randint(0, allowed_max_steps)
+            self.grid_sim.step_index = starting_step
+            self.cons_sim.step_index = starting_step
+            self.prod_sim.step_index = starting_step
 
     def get_state(self):
         state = {

@@ -41,7 +41,15 @@ class GridSim(BaseSim):
                 / (self.voltage_max - self.voltage_min_known)
         )
 
-    def reset(self, seed=None):
+    def check_max_steps(self, max_steps):
+        allowed_max_steps = self.get_allowed_max_steps()
+        if max_steps > allowed_max_steps:
+            raise ValueError(f"Allowed max steps: {allowed_max_steps}")
+
+    def get_allowed_max_steps(self):
+        return len(self.voltage_series)
+
+    def reset(self, seed=None, **kwargs):
         super().reset(seed)
         self.current_feed_to_grid = 0
         self.current_taken_from_grid = 0

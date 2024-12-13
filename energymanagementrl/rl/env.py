@@ -13,7 +13,7 @@ class InverterEnv(gym.Env):
 
     Attributes:
         inverter_sim (InverterSim): Instance of the InverterSim simulation model.
-        max_steps (int): Maximum number of steps per episode.
+        _max_steps (int): Maximum number of steps per episode.
         current_step (int): Index for tracking the current simulation step.
         action_space (spaces.Discrete): Action space for the environment (binary: 0 for grid-feeding, 1 for self-consumption).
         observation_space (spaces.Box): Observation space defining the range of possible state values.
@@ -41,7 +41,8 @@ class InverterEnv(gym.Env):
         super(InverterEnv, self).__init__()
         self.inverter_sim = inverter_sim
         self.state_size = len(list(extract_values_gen(self.inverter_sim.get_state())))
-        self.max_steps = max_steps
+        self._max_steps = None
+        self.set_max_steps(max_steps)
         self.current_step = 0
         self.action_space = spaces.Discrete(2)  # Two actions: grid-feeding or self-consumption
         self.observation_space = spaces.Box(low=0, high=1000, shape=(self.state_size,), dtype=np.float64)
@@ -53,6 +54,10 @@ class InverterEnv(gym.Env):
         self.reward = 0
         # Precompute normalization factors
         self.inv_factors = np.array([1 / 1000] * self.state_size)
+
+    def set_max_steps(self, max_steps):
+        self.inverter_sim.check_max_steps(max_steps)
+        self._max_steps = max_steps
 
     def reset(self, seed=0, **kwargs):
         """
@@ -66,8 +71,10 @@ class InverterEnv(gym.Env):
         """
         self.state = np.zeros(self.state_size)
         self.current_step = 0
-        self.inverter_sim.reset(seed if seed != 0 else None)
+        self.inverter_sim.reset(seed if seed != 0 else None, **kwargs)
         self.last_action = 0
+        self.inverter_sim.random_start(self._max_steps)
+
         return self.state, {}
 
     def step(self, action: int):
@@ -85,7 +92,7 @@ class InverterEnv(gym.Env):
         self.inverter_sim.step(action)
         self._update_state()
         reward = self.set_reward()
-        done = self.current_step > self.max_steps
+        done = self.current_step > self._max_steps
         truncated = False
 
         return self.state, reward, done, truncated, {}

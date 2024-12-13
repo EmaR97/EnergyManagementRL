@@ -50,7 +50,7 @@ class BatterySim(BaseSim):
         self.current_charge = self.random_state.randint(0, self.capacity) \
             if self.starting_charge is None else self.starting_charge
 
-    def reset(self, seed=None):
+    def reset(self, seed=None,**kwargs):
         """
         Resets the battery to its starting charge and clears charge and discharge rates.
         """

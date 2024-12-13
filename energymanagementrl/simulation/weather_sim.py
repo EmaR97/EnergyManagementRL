@@ -1,4 +1,4 @@
-from .utils  import sparse_matrix
+from .utils import sparse_matrix
 from .base_sim import BaseSim
 
 import numpy as np
@@ -23,7 +23,7 @@ class WeatherSim(BaseSim):
         self.forecast_steps = forecast_steps
         self.reset()  # 20 weeks
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, **kwargs):
         super().reset(seed)
         self.cloud_coverage_series = self._set_cloud_coverage_series()
         self.attenuation_series = self._set_attenuation_series()
@@ -36,7 +36,8 @@ class WeatherSim(BaseSim):
         return self.cloud_coverage_series[:, start_index:start_index + self.forecast_steps]
 
     def get_state(self):
-        return {f"cloud_coverage_{i}": value for i, value in enumerate((self.get_cloud_coverage() @ sparse_matrix).flatten())}
+        return {f"cloud_coverage_{i}": value for i, value in
+                enumerate((self.get_cloud_coverage() @ sparse_matrix).flatten())}
 
     def _set_cloud_coverage_series(self):
         """
