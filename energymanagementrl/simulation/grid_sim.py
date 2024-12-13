@@ -59,8 +59,8 @@ class GridSim(BaseSim):
             int: Remaining energy balance after adjusting for feed-in or draw from the grid.
         """
         super().step(**inputs)
-        self.current_feed_to_grid=0
-        self.current_taken_from_grid=0
+        self.current_feed_to_grid = 0
+        self.current_taken_from_grid = 0
         if energy_balance > 0:  # Surplus energy
             self.current_feed_to_grid = min(energy_balance, int(self.get_grid_acceptance()))
             energy_balance -= self.current_feed_to_grid
@@ -78,6 +78,17 @@ class GridSim(BaseSim):
             float: Maximum power the grid can accept at the current voltage level.
         """
         current_voltage = self.voltage_series[self.step_index]
+        grid_acceptance_capacity = self._map_voltage_to_power(current_voltage) * min5
+        return grid_acceptance_capacity
+
+    def get_grid_acceptance_ahead(self) -> float:
+        """
+        Determines the current grid's acceptance capacity based on the voltage at the current step.
+
+        Returns:
+            float: Maximum power the grid can accept at the current voltage level.
+        """
+        current_voltage = self.voltage_series[self.step_index + 1]
         grid_acceptance_capacity = self._map_voltage_to_power(current_voltage) * min5
         return grid_acceptance_capacity
 
@@ -115,4 +126,4 @@ class GridSim(BaseSim):
         return self.current_taken_from_grid
 
     def get_state(self):
-        return {'feed_to_grid':self.current_feed_to_grid, 'taken_from_grid':self.current_taken_from_grid}
+        return {'feed_to_grid': self.current_feed_to_grid, 'taken_from_grid': self.current_taken_from_grid}

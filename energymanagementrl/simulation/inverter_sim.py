@@ -93,12 +93,16 @@ class InverterSim(BaseSim):
             int: Remaining energy balance after the step.
         """
         super().step(**inputs)
-        energy_balance = self.prod_sim.step() - self.cons_sim.step()  # Net energy (production - consumption)
+        prod_sim_step = self.prod_sim.step()
+        cons_sim_step = prod_sim_step - self.cons_sim.step()  # Net energy (production - consumption)
         if action == MODE_A:  # Mode A (Max-Self-Consumption)
-            energy_balance = self._manage_energy_mode_a(energy_balance)
+            batt_sim_step, grid_sim_step = self._manage_energy_mode_a(cons_sim_step)
         elif action == MODE_B:  # Mode B (Full-Feed-to-Grid)
-            energy_balance = self._manage_energy_mode_b(energy_balance)
-        self.energy_balance = energy_balance
+            batt_sim_step, grid_sim_step = self._manage_energy_mode_b(cons_sim_step)
+        else:
+            raise ValueError(f'Invalid operation mode: {action}')
+        # print(prod_sim_step, cons_sim_step, batt_sim_step, grid_sim_step)
+        self.energy_balance = grid_sim_step
 
     def _manage_energy_mode_a(self, energy_balance: int):
         """
@@ -113,7 +117,8 @@ class InverterSim(BaseSim):
         Returns:
             int: Adjusted energy balance after managing battery and grid interaction.
         """
-        return self.grid_sim.step(self.batt_sim.step(energy_balance))
+        batt_sim_step = self.batt_sim.step(energy_balance)
+        return batt_sim_step, self.grid_sim.step(batt_sim_step)
 
     def _manage_energy_mode_b(self, energy_balance: int):
         """
@@ -129,15 +134,11 @@ class InverterSim(BaseSim):
             int: Adjusted energy balance after managing grid feed-in and battery usage.
         """
         # Consider grid as a load in Mode B
-        grid_acceptance = self.grid_sim.get_grid_acceptance()
+        grid_acceptance = self.grid_sim.get_grid_acceptance_ahead()
         energy_balance -= grid_acceptance  # Feed as much as possible to the grid
-        energy_balance_after_batt = self.batt_sim.step(energy_balance)  # Battery handles excess or deficit
-
-        if energy_balance_after_batt >= 0:  # If additional load can be satisfied
-            return self.grid_sim.step(grid_acceptance)
-        else:  # If load can't be fully satisfied, adjust balance to provide available energy
-            adjusted_balance = grid_acceptance + energy_balance_after_batt
-            return self.grid_sim.step(adjusted_balance)
+        energy_balance_after_batt = self.batt_sim.step(energy_balance)  # Battery handles steps excess or deficit
+        energy_balance_after_batt += grid_acceptance
+        return energy_balance_after_batt, self.grid_sim.step(energy_balance_after_batt)
 
     def get_state(self):
         state = {

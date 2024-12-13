@@ -98,7 +98,8 @@ class ProductionSimWithError(ProductionSim):
                  ) -> None:
         super().__init__(power_series, daily_sample, forecast_steps, seed)
         self.optimal_power_series = [x * min5 for x in optimal_power_series]
-        self.optimal_power_series = self.optimal_power_series + self.optimal_power_series[-forecast_steps * self.sample_size:]
+        self.optimal_power_series = self.optimal_power_series + self.optimal_power_series[
+                                                                -forecast_steps * self.sample_size:]
         self.error_divisor = error_divisor
         self.precomputed_energy = []
         self.residual_series = []
@@ -128,7 +129,9 @@ class ProductionSimWithError(ProductionSim):
             self.precomputed_energy.append(updated_energy)
 
     def get_energy(self):
-        return self.precomputed_energy[self.step_index]
+
+        energy = self.precomputed_energy[self.step_index]
+        return energy
 
     def get_residual_sample(self):
         sample = [int(self.residual_series[self.step_index + i]) for i in self.forecast_range]
