@@ -54,7 +54,7 @@ def process_weather_data(
 
 
 def get_weather_data_clearsky(end_time: str, loc: location, timezone: str, start_time: str):
-    times = pd.date_range(start_time, end_time, freq='15min').tz_localize(timezone)
+    times = pd.date_range(start_time, end_time, freq='15min')#.tz_localize(timezone)
     weather = loc.get_clearsky(times)
     return weather
 
