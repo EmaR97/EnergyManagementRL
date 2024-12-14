@@ -1,1 +1,2 @@
 from .extended_client import FusionSolarClientExtended
+from .parsed_client import FusionSolarClientParsed
