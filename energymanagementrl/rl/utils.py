@@ -2,10 +2,9 @@ from matplotlib import pyplot as plt
 import pandas as pd
 
 
-
 def test_plot(env, model, steps, to_show=None, seed=None, ):
     state_history = []
-    obs, _ = env.reset(seed, shuffle=True)
+    obs, _ = env.reset(seed, shuffle=0)
     for _ in range(steps):
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, done, _, _ = env.step(action)

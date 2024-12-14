@@ -59,19 +59,10 @@ class InverterEnv(gym.Env):
         self.inverter_sim.check_max_steps(max_steps)
         self._max_steps = max_steps
 
-    def reset(self, seed=0, **kwargs):
-        """
-        Resets the environment state, simulation, and metrics.
-
-        Parameters:
-            seed (int): Optional random seed.
-
-        Returns:
-            tuple: Initial state and an empty info dictionary.
-        """
+    def reset(self, seed=0, shuffle=2, **kwargs):
         self.state = np.zeros(self.state_size)
         self.current_step = 0
-        self.inverter_sim.reset(seed if seed != 0 else None, **kwargs)
+        self.inverter_sim.reset(seed if seed != 0 else None, shuffle=shuffle, **kwargs)
         self.last_action = 0
         self.inverter_sim.random_start(self._max_steps)
 

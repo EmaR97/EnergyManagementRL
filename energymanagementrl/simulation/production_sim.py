@@ -112,8 +112,9 @@ class ProductionSimWithError(ProductionSim):
         return state
 
     def reset(self, seed=None, **kwargs):
-        super().reset(seed)
-        if kwargs.get('shuffle') is True:
+        super().reset(seed, **kwargs)
+        shuffle = kwargs.get('shuffle', 0)
+        if shuffle > 0:
             state = self.random_state.get_state()
             self.energy_series = shuffle_array_blocks(
                 array=np.array(self.orig_energy_series),
@@ -131,6 +132,14 @@ class ProductionSimWithError(ProductionSim):
                 random_state=self.random_state
             ).tolist()
         self.precompute_energy()
+        if shuffle > 1:
+            self.energy_series = shuffle_array_blocks(
+                array=np.array(self.energy_series),
+                block_size=288,
+                max_shift=1,
+                mix_probability=.25,
+                random_state=self.random_state
+            ).tolist()
 
     def precompute_energy(self):
         """Precompute updated energy values based on optimal_power_series."""

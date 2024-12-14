@@ -44,7 +44,8 @@ class EnergySim(BaseSim):
 
     def reset(self, seed=None, **kwargs):
         super().reset(seed)
-        if kwargs.get('shuffle') is True:
+
+        if kwargs.get('shuffle', 0) > 0:
             self.energy_series = shuffle_array_blocks(
                 array=np.array(self.orig_energy_series),
                 block_size=288,
