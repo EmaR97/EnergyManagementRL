@@ -35,7 +35,7 @@ class GridSim(BaseSim):
         self.energy_price_buy = energy_price_buy
         self.current_feed_to_grid = 0.0
         self.current_taken_from_grid = 0.0
-        self.voltage_series = voltage_series
+        self.voltage_series = list(voltage_series)
         self.power_for_voltage = (
                 (self.feed_in_max_known - self.feed_in_min)
                 / (self.voltage_max - self.voltage_min_known)

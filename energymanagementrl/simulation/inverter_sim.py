@@ -1,6 +1,3 @@
-import numpy as np
-import pandas as pd
-
 from .base_sim import BaseSim
 from .battery_sim import BatterySim
 from .consumption_sim import ConsumptionSim
@@ -24,8 +21,6 @@ class InverterSim(BaseSim):
         cons_sim (EnergySim): Simulation of energy consumption.
         batt_sim (BatterySim): Battery simulation for energy storage.
         grid_sim (GridSim): Simulation of grid interaction.
-        timestamps (pd.Series): Series of timestamps for each simulation step.
-        precomputed_time_steps (np.ndarray): Array of precomputed sine and cosine values for each timestep.
     """
 
     def __init__(
@@ -34,7 +29,6 @@ class InverterSim(BaseSim):
             cons_sim: ConsumptionSim,
             batt_sim: BatterySim,
             grid_sim: GridSim,
-            timestamps: pd.Series,
             seed=None,
     ):
         """
@@ -45,7 +39,6 @@ class InverterSim(BaseSim):
             cons_sim (EnergySim): Instance for simulating energy consumption.
             batt_sim (BatterySim): Instance for managing battery operations.
             grid_sim (GridSim): Instance for handling grid interactions.
-            timestamps (pd.Series): Series of timestamps corresponding to each simulation step.
         """
         super().__init__(seed)
         self.energy_balance = 0
@@ -53,29 +46,11 @@ class InverterSim(BaseSim):
         self.cons_sim = cons_sim
         self.batt_sim = batt_sim
         self.grid_sim = grid_sim
-        self.timestamps = timestamps
-
-        # Precompute sine and cosine values for each timestep
-        self.precomputed_time_steps = self._precompute_time_steps()
 
     def check_max_steps(self, max_steps):
         self.prod_sim.check_max_steps(max_steps)
         self.cons_sim.check_max_steps(max_steps)
         self.grid_sim.check_max_steps(max_steps)
-
-    def _precompute_time_steps(self) -> np.ndarray:
-        """
-        Precomputes normalized sine and cosine values for each timestamp to simulate time-dependent behavior.
-
-        Returns:
-            np.ndarray: Array of precomputed sine and cosine values for each timestamp.
-        """
-        time_steps = []
-        for timestamp in self.timestamps:
-            timestep = (timestamp.hour * 12 + timestamp.minute / 5) / 288 * 2 * np.pi
-            sin_cos = (np.array([np.sin(timestep), np.cos(timestep)]) / 2) + 0.5
-            time_steps.append(sin_cos)
-        return np.array(time_steps)
 
     def reset(self, seed=None, **kwargs) -> None:
         """
