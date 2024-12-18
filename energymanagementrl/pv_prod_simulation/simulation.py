@@ -6,7 +6,7 @@ import pandas as pd
 from pvlib import modelchain, location
 from pvlib import pvsystem
 
-from energymanagementrl.pv_prod_simulation.weather_open_meteo import get_weather_data
+from .weather_open_meteo import OpenMeteoClient
 
 
 class PanelModel:
@@ -82,49 +82,52 @@ class PlantConfig:
         )
 
 
-def run_simulation(
-        mc,
-        system,
-        weather_data: pd.DataFrame
-):
-    mc.run_model(weather_data)
-    dc_results = pd.concat(
-        [mc.results.dc[i].rename(f'{array.name}_dc') for i, array in enumerate(system.arrays)], axis=1
-    )
-    ac_results = mc.results.ac.rename('inverter_ac')
-    return pd.concat([dc_results, ac_results], axis=1)
-
-
-def model_config(
-        plant_config: PlantConfig
-) -> tuple[modelchain.ModelChain, pvsystem.PVSystem, location.Location]:
-    system = plant_config.setup_pv_system()
-    loc = location.Location(plant_config.latitude, plant_config.longitude)
-    mc = modelchain.ModelChain(system, loc, aoi_model='physical', spectral_model='no_loss')
-    return mc, system, loc
-
-
 class WeatherType(Enum):
     clear_sky = 0
     open_meteo = 1
     open_meteo_forecast = 2
 
 
-def run_energy_production_prediction(
-        plant_config: PlantConfig,
-        start_time: str,
-        end_time: str,
-        weather_type: WeatherType = WeatherType.clear_sky,
-) -> pd.DataFrame:
-    mc, system, loc = model_config(plant_config)
-    if weather_type == WeatherType.open_meteo:
-        weather_data = get_weather_data(start_time, end_time, plant_config.latitude, plant_config.longitude)
-    elif weather_type == WeatherType.open_meteo_forecast:
-        weather_data = get_weather_data(start_time, end_time, plant_config.latitude, plant_config.longitude,
-                                        forecast=True)
-    elif weather_type == WeatherType.clear_sky:
-        times = pd.date_range(start_time, end_time, freq='5min')
-        weather_data = loc.get_clearsky(times)
-    else:
-        raise ValueError()
-    return run_simulation(mc, system, weather_data[:])
+class EnergyPredictionSystem:
+    def __init__(self, plant_config: PlantConfig, open_meteo_client: OpenMeteoClient = None):
+        self.plant_config = plant_config
+        self.mc, self.system, self.loc = self._initialize_model()
+        self.open_meteo_client = open_meteo_client
+
+    def _initialize_model(self) -> tuple[modelchain.ModelChain, pvsystem.PVSystem, location.Location]:
+        system = self.plant_config.setup_pv_system()
+        loc = location.Location(self.plant_config.latitude, self.plant_config.longitude)
+        mc = modelchain.ModelChain(system, loc, aoi_model='physical', spectral_model='no_loss')
+        return mc, system, loc
+
+    def run_simulation(self, weather_data: pd.DataFrame) -> pd.DataFrame:
+        self.mc.run_model(weather_data)
+        dc_results = pd.concat(
+            [self.mc.results.dc[i].rename(f'{array.name}_dc') for i, array in enumerate(self.system.arrays)], axis=1
+        )
+        ac_results = self.mc.results.ac.rename('inverter_ac')
+        return pd.concat([dc_results, ac_results], axis=1)
+
+    def run_energy_production_prediction(
+            self,
+            start_time: str,
+            end_time: str,
+            weather_type: WeatherType = WeatherType.clear_sky,
+    ) -> pd.DataFrame:
+        if weather_type == WeatherType.open_meteo:
+            if self.open_meteo_client is None:
+                raise ValueError('To use this functionality a open meteo client is needed')
+            weather_data = self.open_meteo_client.get_weather_data(start_time, end_time, self.plant_config.latitude,
+                                                                   self.plant_config.longitude)
+        elif weather_type == WeatherType.open_meteo_forecast:
+            if self.open_meteo_client is None:
+                raise ValueError('To use this functionality a open meteo client is needed')
+            weather_data = self.open_meteo_client.get_weather_data(start_time, end_time, self.plant_config.latitude,
+                                                                   self.plant_config.longitude,
+                                                                   forecast=True)
+        elif weather_type == WeatherType.clear_sky:
+            times = pd.date_range(start_time, end_time, freq='5min')
+            weather_data = self.loc.get_clearsky(times)
+        else:
+            raise ValueError("Invalid weather type.")
+        return self.run_simulation(weather_data)

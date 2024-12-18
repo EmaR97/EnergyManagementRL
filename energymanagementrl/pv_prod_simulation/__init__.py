@@ -1,3 +1,4 @@
 from .simulation import PanelModel, ArrayConfig, PlantConfig, \
-    run_energy_production_prediction, WeatherType
+    WeatherType, EnergyPredictionSystem
+from .weather_open_meteo import OpenMeteoClient
 from .utils import analyze_production
