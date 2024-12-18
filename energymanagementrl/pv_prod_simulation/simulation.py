@@ -118,13 +118,12 @@ def run_energy_production_prediction(
 ) -> pd.DataFrame:
     mc, system, loc = model_config(plant_config)
     if weather_type == WeatherType.open_meteo:
-        weather_data = get_weather_data(start_time, end_time, plant_config.latitude, plant_config.longitude,
-                                        plant_config.timezone)
+        weather_data = get_weather_data(start_time, end_time, plant_config.latitude, plant_config.longitude)
     elif weather_type == WeatherType.open_meteo_forecast:
         weather_data = get_weather_data(start_time, end_time, plant_config.latitude, plant_config.longitude,
-                                        plant_config.timezone, forecast=True)
+                                        forecast=True)
     elif weather_type == WeatherType.clear_sky:
-        times = pd.date_range(start_time, end_time, freq='15min')
+        times = pd.date_range(start_time, end_time, freq='5min')
         weather_data = loc.get_clearsky(times)
     else:
         raise ValueError()

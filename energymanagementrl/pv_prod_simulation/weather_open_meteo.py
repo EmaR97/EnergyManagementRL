@@ -17,42 +17,27 @@ def fetch_weather_data(
         start_time: str,
         end_time: str,
         latitude: float,
-        longitude: float
+        longitude: float,
+        forecast=False
 ) -> any:
-    url = "https://historical-forecast-api.open-meteo.com/v1/forecast"
+    if forecast:
+        url = "https://api.open-meteo.com/v1/forecast"
+    else:
+        url = "https://historical-forecast-api.open-meteo.com/v1/forecast"
     params = {
         "latitude": latitude,
         "longitude": longitude,
         "start_date": datetime.strptime(start_time, '%Y-%m-%d %H:%M').strftime('%Y-%m-%d'),
         "end_date": datetime.strptime(end_time, '%Y-%m-%d %H:%M').strftime('%Y-%m-%d'),
         "minutely_15": ["shortwave_radiation_instant", "diffuse_radiation_instant", "direct_normal_irradiance_instant"],
-        "timezone": 'auto'
-    }
-    return client.weather_api(url, params=params)[0]
-
-
-def fetch_weather_data_forecast(
-        client: openmeteo_requests.Client,
-        start_time: str,
-        end_time: str,
-        latitude: float,
-        longitude: float
-) -> any:
-    url = "https://api.open-meteo.com/v1/forecast"
-    params = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "start_date": datetime.strptime(start_time, '%Y-%m-%d %H:%M').strftime('%Y-%m-%d'),
-        "end_date": datetime.strptime(end_time, '%Y-%m-%d %H:%M').strftime('%Y-%m-%d'),
-        "minutely_15": ["shortwave_radiation_instant", "diffuse_radiation_instant", "direct_normal_irradiance_instant"],
-        "timezone": 'auto'
     }
     return client.weather_api(url, params=params)[0]
 
 
 def process_weather_data(
         response,
-        timezone: str
+        start_time,
+        end_time
 ) -> pd.DataFrame:
     minutely_15 = response.Minutely15()
     weather_data = {
@@ -66,7 +51,9 @@ def process_weather_data(
         "dhi": minutely_15.Variables(1).ValuesAsNumpy(),
         "dni": minutely_15.Variables(2).ValuesAsNumpy()
     }
-    return pd.DataFrame(weather_data).set_index('date').tz_convert(timezone)
+    df = pd.DataFrame(weather_data).set_index('date').tz_convert(None).resample('5min').interpolate(method='linear')
+    filtered_df = df.loc[(df.index >= start_time) & (df.index <= end_time)]
+    return filtered_df
 
 
 def get_weather_data(
@@ -74,17 +61,11 @@ def get_weather_data(
         end_time: str,
         latitude: float,
         longitude: float,
-        timezone: str,
         forecast: bool = False
 ):
     weather_client = setup_weather_client()
-    if forecast:
-        weather_response = fetch_weather_data_forecast(
-            weather_client, start_time, end_time, latitude, longitude
-        )
-    else:
-        weather_response = fetch_weather_data(
-            weather_client, start_time, end_time, latitude, longitude
-        )
+    weather_response = fetch_weather_data(
+        weather_client, start_time, end_time, latitude, longitude, forecast
+    )
 
-    return process_weather_data(weather_response, timezone)
+    return process_weather_data(weather_response, start_time, end_time)
