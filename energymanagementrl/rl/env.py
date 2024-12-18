@@ -59,7 +59,7 @@ class InverterEnv(gym.Env):
         self.inverter_sim.check_max_steps(max_steps)
         self._max_steps = max_steps
 
-    def reset(self, seed=0, shuffle=2, **kwargs):
+    def reset(self, seed=0, shuffle=0, **kwargs):
         self.state = np.zeros(self.state_size)
         self.current_step = 0
         self.inverter_sim.reset(seed if seed != 0 else None, shuffle=shuffle, **kwargs)

@@ -6,6 +6,17 @@ from fusion_solar_py.client import FusionSolarClient, logged_in
 from fusion_solar_py.exceptions import FusionSolarException
 
 
+class FusionSolarExceptionExtended(FusionSolarException):
+    class ErrorCode(Enum):
+        GENERIC = 0
+        BATTERY_WORK_MODE = 1
+        PARSING = 2
+
+    def __init__(self, message: str, code: ErrorCode = None):
+        super().__init__(message)
+        self.code = code if code is not None else FusionSolarExceptionExtended.ErrorCode.GENERIC
+
+
 class FusionSolarClientExtended(FusionSolarClient):
     """Extension of FusionSolarClient with additional functionality."""
 
@@ -36,8 +47,9 @@ class FusionSolarClientExtended(FusionSolarClient):
             response_json = response.json()
             for data in response_json['data']:
                 if data['code'] != 0:
-                    raise FusionSolarException(
-                        f"Failed to set mode for battery {battery_id}, response:{response}"
+                    raise FusionSolarExceptionExtended(
+                        message=f"Failed to set mode for battery {battery_id}, response:{response}",
+                        code=FusionSolarExceptionExtended.ErrorCode.BATTERY_WORK_MODE
                     )
         except ValueError:
             print("Error: The response is not in JSON format.")

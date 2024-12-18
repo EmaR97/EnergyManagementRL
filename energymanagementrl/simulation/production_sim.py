@@ -162,3 +162,42 @@ class ProductionSimWithError(ProductionSim):
     def get_residual_sample(self):
         sample = [int(self.residual_series[self.step_index + i]) for i in self.forecast_range]
         return np.array(sample) @ sparse_matrix
+
+
+class ProductionSimFromReal(ProductionSim):
+    def __init__(self,
+                 power_series: list[float],
+                 optimal_power_series: list[float],
+                 weather_power_series: list[float],
+                 daily_sample: int = 24,
+                 forecast_steps: int = 24,
+                 seed=None
+                 ) -> None:
+        super().__init__(power_series, daily_sample, forecast_steps, seed)
+        self.optimal_power_series = [x * min5 for x in optimal_power_series]
+        self.weather_power_series = [x * min5 for x in weather_power_series]
+        self.residual_series = []
+        self.precompute_residual()
+
+    def get_state(self):
+        state = super().get_state()
+        state.update({f"residual_sample_{i}": value for i, value in enumerate(self.get_residual_sample())})
+        return state
+
+    def reset(self, seed=None, **kwargs):
+        super().reset(seed, **kwargs)
+        self.precompute_residual()
+
+    def precompute_residual(self):
+        self.residual_series = []
+        for i in range(len(self.optimal_power_series)):
+            residual = abs(self.optimal_power_series[i] - self.weather_power_series[i])
+            self.residual_series.append(residual)
+
+    def get_residual_sample(self) -> list[int]:
+        sample = [int(self.residual_series[self.step_index + i]) for i in self.forecast_range]
+        return np.array(sample) @ sparse_matrix
+
+    def get_energy_sample(self) -> list[int]:
+        sample = [int(self.weather_power_series[self.step_index + i]) for i in self.forecast_range]
+        return np.array(sample) @ sparse_matrix

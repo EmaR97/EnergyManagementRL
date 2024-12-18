@@ -34,6 +34,25 @@ def fetch_weather_data(
     return client.weather_api(url, params=params)[0]
 
 
+def fetch_weather_data_forecast(
+        client: openmeteo_requests.Client,
+        start_time: str,
+        end_time: str,
+        latitude: float,
+        longitude: float
+) -> any:
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "start_date": datetime.strptime(start_time, '%Y-%m-%d %H:%M').strftime('%Y-%m-%d'),
+        "end_date": datetime.strptime(end_time, '%Y-%m-%d %H:%M').strftime('%Y-%m-%d'),
+        "minutely_15": ["shortwave_radiation_instant", "diffuse_radiation_instant", "direct_normal_irradiance_instant"],
+        "timezone": 'auto'
+    }
+    return client.weather_api(url, params=params)[0]
+
+
 def process_weather_data(
         response,
         timezone: str
@@ -53,8 +72,8 @@ def process_weather_data(
     return pd.DataFrame(weather_data).set_index('date').tz_convert(timezone)
 
 
-def get_weather_data_clearsky(end_time: str, loc: location, timezone: str, start_time: str):
-    times = pd.date_range(start_time, end_time, freq='15min')#.tz_localize(timezone)
+def get_weather_data_clearsky(end_time: str, loc: location, start_time: str):
+    times = pd.date_range(start_time, end_time, freq='15min')
     weather = loc.get_clearsky(times)
     return weather
 
@@ -64,13 +83,17 @@ def get_weather_data_openmeteo(
         end_time: str,
         latitude: float,
         longitude: float,
-        timezone: str
+        timezone: str,
+        forecast: bool = False
 ):
     weather_client = setup_weather_client()
-    weather_response = fetch_weather_data(
-        weather_client, start_time, end_time, latitude, longitude
-    )
-    print(f"Coordinates: {weather_response.Latitude()}°N, {weather_response.Longitude()}°E")
-    print(f"Elevation: {weather_response.Elevation()} m asl")
-    print(f"Timezone: {weather_response.Timezone()} {weather_response.TimezoneAbbreviation()}")
+    if forecast:
+        weather_response = fetch_weather_data_forecast(
+            weather_client, start_time, end_time, latitude, longitude
+        )
+    else:
+        weather_response = fetch_weather_data(
+            weather_client, start_time, end_time, latitude, longitude
+        )
+
     return process_weather_data(weather_response, timezone)

@@ -3,7 +3,7 @@ from typing import List, Tuple
 import numpy as np
 import pandas as pd
 
-from .extended_client import FusionSolarClientExtended
+from .extended_client import FusionSolarClientExtended, FusionSolarExceptionExtended
 
 
 class FusionSolarClientParsed(FusionSolarClientExtended):
@@ -117,13 +117,22 @@ class FusionSolarClientParsed(FusionSolarClientExtended):
             load_data = flow_data['nodes'][5]
         except (KeyError, IndexError) as e:
             raise ValueError(f"Unexpected structure in plant data: {e}")
-
         # Parse numeric values from descriptions
-        prod = float(prod_data['description']['value'].split()[0])
-        load = -float(load_data['description']['value'].split()[0])
-        store = float(store_data['description']['value'].split()[0])
-        grid = float(grid_data['description']['value'].split()[0])
-        soc = float(store_data['deviceTips']['SOC'])
+        string_prod = prod_data['description']['value'].split()[0]
+        string_load = load_data['description']['value'].split()[0]
+        string_store = store_data['description']['value'].split()[0]
+        string_grid = grid_data['description']['value'].split()[0]
+        string_soc = store_data['deviceTips']['SOC']
+        if '--' in (string_prod, string_load, string_store, string_grid, string_soc):
+            raise FusionSolarExceptionExtended(
+                message=f"get_plant_flow_parsed",
+                code=FusionSolarExceptionExtended.ErrorCode.PARSING
+            )
+        prod = float(string_prod)
+        load = -float(string_load)
+        store = float(string_store)
+        grid = float(string_grid)
+        soc = float(string_soc)
         # Adjust store and grid to maintain system balance
         store, grid = get_system_balance(prod, load, store, grid)
 
