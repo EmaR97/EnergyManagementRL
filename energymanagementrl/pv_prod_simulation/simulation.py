@@ -1,10 +1,12 @@
 # simulation.py
-
+from enum import Enum
 from typing import List
 
 import pandas as pd
 from pvlib import modelchain, location
 from pvlib import pvsystem
+
+from energymanagementrl.pv_prod_simulation.weather_open_meteo import get_weather_data
 
 
 class PanelModel:
@@ -100,3 +102,30 @@ def model_config(
     loc = location.Location(plant_config.latitude, plant_config.longitude)
     mc = modelchain.ModelChain(system, loc, aoi_model='physical', spectral_model='no_loss')
     return mc, system, loc
+
+
+class WeatherType(Enum):
+    clear_sky = 0
+    open_meteo = 1
+    open_meteo_forecast = 2
+
+
+def run_energy_production_prediction(
+        plant_config: PlantConfig,
+        start_time: str,
+        end_time: str,
+        weather_type: WeatherType = WeatherType.clear_sky,
+) -> pd.DataFrame:
+    mc, system, loc = model_config(plant_config)
+    if weather_type == WeatherType.open_meteo:
+        weather_data = get_weather_data(start_time, end_time, plant_config.latitude, plant_config.longitude,
+                                        plant_config.timezone)
+    elif weather_type == WeatherType.open_meteo_forecast:
+        weather_data = get_weather_data(start_time, end_time, plant_config.latitude, plant_config.longitude,
+                                        plant_config.timezone, forecast=True)
+    elif weather_type == WeatherType.clear_sky:
+        times = pd.date_range(start_time, end_time, freq='15min')
+        weather_data = loc.get_clearsky(times)
+    else:
+        raise ValueError()
+    return run_simulation(mc, system, weather_data[:])

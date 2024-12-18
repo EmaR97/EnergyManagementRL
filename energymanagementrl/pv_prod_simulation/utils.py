@@ -1,38 +1,5 @@
-# main.py
-from enum import Enum
-
-import matplotlib.pyplot as plt
 import pandas as pd
-
-from .weather import get_weather_data_openmeteo, get_weather_data_clearsky
-from .simulation import PlantConfig
-from .simulation import run_simulation, model_config
-
-
-class WeatherType(Enum):
-    clear_sky = 0
-    open_meteo = 1
-    open_meteo_forecast = 2
-
-
-def run_energy_production_prediction(
-        plant_config: PlantConfig,
-        start_time: str,
-        end_time: str,
-        weather_type: WeatherType = WeatherType.clear_sky,
-) -> pd.DataFrame:
-    mc, system, loc = model_config(plant_config)
-    if weather_type == WeatherType.open_meteo:
-        weather_data = get_weather_data_openmeteo(start_time, end_time, plant_config.latitude, plant_config.longitude,
-                                                  plant_config.timezone)
-    elif weather_type == WeatherType.open_meteo_forecast:
-        weather_data = get_weather_data_openmeteo(start_time, end_time, plant_config.latitude, plant_config.longitude,
-                                                  plant_config.timezone, forecast=True)
-    elif weather_type == WeatherType.clear_sky:
-        weather_data = get_weather_data_clearsky(end_time, loc, start_time)
-    else:
-        raise ValueError()
-    return run_simulation(mc, system, weather_data[:])
+from matplotlib import pyplot as plt
 
 
 def plot_results(results_df: pd.DataFrame) -> None:

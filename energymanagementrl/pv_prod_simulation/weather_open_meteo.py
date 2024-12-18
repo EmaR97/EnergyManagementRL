@@ -1,11 +1,8 @@
-# weather.py
-
 from datetime import datetime
 
 import openmeteo_requests
 import pandas as pd
 import requests_cache
-from pvlib import location
 from retry_requests import retry
 
 
@@ -72,13 +69,7 @@ def process_weather_data(
     return pd.DataFrame(weather_data).set_index('date').tz_convert(timezone)
 
 
-def get_weather_data_clearsky(end_time: str, loc: location, start_time: str):
-    times = pd.date_range(start_time, end_time, freq='15min')
-    weather = loc.get_clearsky(times)
-    return weather
-
-
-def get_weather_data_openmeteo(
+def get_weather_data(
         start_time: str,
         end_time: str,
         latitude: float,
