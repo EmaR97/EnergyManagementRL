@@ -26,7 +26,7 @@ def plot_results(results_df: pd.DataFrame) -> None:
 
 
 def analyze_production(
-        results_df: pd.DataFrame
+        results_df: pd.DataFrame, frequency
 ):
     max_production = results_df['inverter_ac'].max()
     max_production_time = results_df['inverter_ac'].idxmax()
@@ -34,7 +34,7 @@ def analyze_production(
     production_start = results_df[results_df['inverter_ac'] > production_threshold].index.min()
     production_end = results_df[results_df['inverter_ac'] > production_threshold].index.max()
 
-    print(f"Total AC energy: {results_df['inverter_ac'].sum() / 4:.2f} kWh")
+    print(f"Total AC energy: {results_df['inverter_ac'].sum() * frequency:.2f} kWh")
     print(f"Max production: {max_production:.2f} kW at {max_production_time}")
     print(f"Production starts at: {production_start}, ends at: {production_end}")
     plot_results(results_df)
