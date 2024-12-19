@@ -1,4 +1,4 @@
-# simulation.py
+# energy_prediction_system.py
 from enum import Enum
 from typing import List
 
@@ -6,7 +6,7 @@ import pandas as pd
 from pvlib import modelchain, location
 from pvlib import pvsystem
 
-from .weather_open_meteo import OpenMeteoClient
+from .open_meteo_client import OpenMeteoClient
 
 
 class PanelModel:
