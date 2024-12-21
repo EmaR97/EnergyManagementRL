@@ -1,5 +1,7 @@
+import numpy as np
+
 from .energy_sim import EnergySim
-from .utils import SmoothedHistory
+from .utils import SmoothedHistory, shuffle_array_blocks
 
 
 class ConsumptionSim(EnergySim):
@@ -32,6 +34,16 @@ class ConsumptionSim(EnergySim):
         super().step(**inputs)
         return self.get_energy()
 
+    def reset(self, seed=None, **kwargs):
+        super().reset(seed, **kwargs)
+        if kwargs.get('shuffle', 0) > 0:
+            self.energy_series = shuffle_array_blocks(
+                array=np.array(self.orig_energy_series),
+                block_size=288,
+                max_shift=2,
+                mix_probability=.25,
+                random_state=self.random_state
+            ).tolist()
 
     def get_energy_sample(self) -> list[int]:
         """

@@ -52,6 +52,7 @@ class InverterEnv(gym.Env):
         self.penalty_energy_purchase = 0
         self.penalty_battery_wear = 0
         self.reward = 0
+        self.shuffle = 0
         # Precompute normalization factors
         self.inv_factors = np.array([1 / 1000] * self.state_size)
 
@@ -59,9 +60,11 @@ class InverterEnv(gym.Env):
         self.inverter_sim.check_max_steps(max_steps)
         self._max_steps = max_steps
 
-    def reset(self, seed=0, shuffle=0, **kwargs):
+    def reset(self, seed=0, shuffle=None, **kwargs):
         self.state = np.zeros(self.state_size)
         self.current_step = 0
+        if shuffle is None:
+            shuffle = self.shuffle
         self.inverter_sim.reset(seed if seed != 0 else None, shuffle=shuffle, **kwargs)
         self.last_action = 0
         self.inverter_sim.random_start(self._max_steps)
@@ -146,6 +149,33 @@ class InverterEnv(gym.Env):
                     self.inverter_sim.batt_sim.battery_wear_rate)
         else:
             self.penalty_battery_wear = 0
+
+
+class InverterEnvAlt(InverterEnv):
+    def __init__(
+            self,
+            inverter_sim: InverterSim,
+            max_steps: int = week,
+            reward_full_charge: float = .01,
+            penalty_early_discharge: float = 1,
+    ):
+        super().__init__(
+            inverter_sim,
+            max_steps
+        )
+        self.reward_full_charge = reward_full_charge
+        self.penalty_early_discharge = penalty_early_discharge
+
+    def set_reward_energy_sold(self) -> None:
+        """
+        Sets the reward component from energy sold to the grid.
+        """
+        super().set_reward_energy_sold()
+        if (not any(state > 0 for state in self.state[1:4])) and self.last_action == 0:
+            self.reward_energy_sold -= self.penalty_early_discharge
+        soc = self.inverter_sim.batt_sim.current_charge / self.inverter_sim.batt_sim.capacity
+        if self.state[0] > 0 and self.state[1] == 0 and .9 < soc < 1:
+            self.reward_energy_sold += self.reward_full_charge
 
 
 class InverterEnvSimple(InverterEnv):

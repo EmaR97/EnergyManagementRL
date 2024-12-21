@@ -1,7 +1,6 @@
-import numpy as np
 
 from .base_sim import BaseSim
-from .utils import min5, day, shuffle_array_blocks
+from .utils import min5, day
 from abc import abstractmethod
 
 
@@ -44,15 +43,6 @@ class EnergySim(BaseSim):
 
     def reset(self, seed=None, **kwargs):
         super().reset(seed)
-
-        if kwargs.get('shuffle', 0) > 0:
-            self.energy_series = shuffle_array_blocks(
-                array=np.array(self.orig_energy_series),
-                block_size=288,
-                max_shift=2,
-                mix_probability=1,
-                random_state=self.random_state
-            ).tolist()
 
     def get_energy(self) -> int:
         """
