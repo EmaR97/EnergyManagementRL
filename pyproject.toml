@@ -5,13 +5,6 @@ description = "Using RL to controll huawei fusion solar inverter and maximize en
 authors = ["emanuele <emanuele.rapisarda.1997@gmail.com >"]
 readme = "README.md"
 
-[tool.poetry.dependencies]
-gymnasium ="*"
-pandas = "*"
-stable-baselines3 = "*"
-matplotlib = "*"
-fonttools = "*"
-scipy = "*"
 
 [project]
 license = {file = "LICENSE"}
