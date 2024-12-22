@@ -174,8 +174,11 @@ class InverterEnvAlt(InverterEnv):
         if (not any(state > 0 for state in self.state[1:4])) and self.last_action == 0:
             self.reward_energy_sold -= self.penalty_early_discharge
         soc = self.inverter_sim.batt_sim.current_charge / self.inverter_sim.batt_sim.capacity
-        if self.state[0] > 0 and self.state[1] == 0 and .9 < soc < 1:
-            self.reward_energy_sold += self.reward_full_charge
+        if self.state[0] > 0 and self.state[1] == 0:
+            if soc < .85:
+                self.reward_energy_sold -= self.reward_full_charge
+            elif soc < .98:
+                self.reward_energy_sold += self.reward_full_charge
 
 
 class InverterEnvSimple(InverterEnv):

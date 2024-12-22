@@ -13,6 +13,19 @@ from energymanagementrl.rl import extract_values_gen
 
 
 class EnergyManagementSystem:
+    """
+    Manages energy flows and controls battery systems based on real-time data and predictions.
+
+    Attributes:
+        client: FusionSolarClientParsed instance for solar data access.
+        plant_id: Unique identifier for the solar plant.
+        battery_id: Unique identifier for the battery.
+        production_forecaster: Instance for energy production forecasting.
+        model: Reinforcement learning model for decision-making.
+        battery_capacity_kw: Maximum battery capacity in kW.
+        battery_min_percentage: Minimum state of charge as a percentage.
+    """
+
     def __init__(
             self,
             client: FusionSolarClientParsed,
@@ -32,12 +45,14 @@ class EnergyManagementSystem:
         self.battery_min_percentage = battery_min_percentage
 
     def get_flow_and_energy(self):
+        """Retrieve and calculate energy flow data from the plant."""
         prod_kw, load_kw, charge_kw, grid_kw, soc = self.client.get_plant_flow_parsed(self.plant_id)
         prod_kwh, load_kwh, charge_kwh, grid_kwh = [i / 12 for i in (prod_kw, -load_kw, charge_kw, grid_kw)]
         stored_kwh = (soc - self.battery_min_percentage) / 100 * self.battery_capacity_kw
         return prod_kwh, load_kwh, charge_kwh, grid_kwh, stored_kwh
 
     def get_history(self):
+        """Retrieve and process historical load data."""
         now = datetime.now()
         history = pd.concat([
             self.client.get_plant_stats_parsed(
@@ -48,33 +63,43 @@ class EnergyManagementSystem:
             )
             for i in [-2, -1, 0]
         ]).usePower
+
         history = history[history.index <= now][-288 * 2:].replace('--', np.nan)
         history = history.astype('float')
+
         if history.isnull().values.any():
+            logging.warning("Missing values in history data. Filling with mean.")
             history.fillna(history.mean(), inplace=True)
+
         load_kwh_last_2day = history.resample('4h').mean()[1:] / 12
         return load_kwh_last_2day
 
     def compute_production_residual(self):
+        """Compute production residuals based on forecasts."""
         now_gmt = pd.Timestamp.now(tz='UTC').to_pydatetime()
         now_gmt_5m = now_gmt.replace(minute=now_gmt.minute // 5 * 5)
         start = now_gmt_5m.strftime('%Y-%m-%d %H:%M')
         end = (now_gmt_5m + timedelta(days=2)).strftime('%Y-%m-%d %H:%M')
-        clear_sky_df = self.production_forecaster.run_energy_production_prediction(start, end,
-                                                                                   WeatherType.clear_sky) / 12
-        open_meteo_df = self.production_forecaster.run_energy_production_prediction(start, end,
-                                                                                    WeatherType.open_meteo_forecast) / 12
-        forecast_range = [i * 12 for i in range(48)]
+
+        def get_forecast(weather_type):
+            """Fetch energy production predictions for a given weather type."""
+            return self.production_forecaster.run_energy_production_prediction(start, end, weather_type) / 12
+
+        clear_sky_df = get_forecast(WeatherType.clear_sky)
+        open_meteo_df = get_forecast(WeatherType.open_meteo_forecast)
         residual = abs(clear_sky_df.inverter_ac - open_meteo_df.inverter_ac)
-        prod_kwh_next_2day, residual_kwh_next_2day = (
-            np.array(column.iloc[forecast_range]) @ sparse_matrix
-            for column in (open_meteo_df.inverter_ac, residual)
-        )
+
+        forecast_range = [i * 12 for i in range(48)]
+        prod_kwh_next_2day = np.array(open_meteo_df.inverter_ac.iloc[forecast_range]) @ sparse_matrix
+        residual_kwh_next_2day = np.array(residual.iloc[forecast_range]) @ sparse_matrix
+
         return prod_kwh_next_2day, residual_kwh_next_2day
 
-    def build_system_state(self, prod_kwh: float, load_kwh: float, charge_kwh: float, grid_kwh: float,
-                           stored_kwh: float, load_kwh_last_2day,
-                           prod_kwh_next_2day, residual_kwh_next_2day) -> dict[str, any]:
+    @staticmethod
+    def _build_system_state(prod_kwh: float, load_kwh: float, charge_kwh: float, grid_kwh: float,
+                            stored_kwh: float, load_kwh_last_2day,
+                            prod_kwh_next_2day, residual_kwh_next_2day) -> dict[str, any]:
+        """Construct the system state from energy data."""
         state = {
             'prod_sim': {},
             'cons_sim': {},
@@ -85,6 +110,7 @@ class EnergyManagementSystem:
         for i, value in enumerate(prod_kwh_next_2day):
             state['prod_sim'][f"energy_sample_{i}"] = round(float(value), 3)
         state["prod_sim"]["energy"] = prod_kwh
+
         for i, value in enumerate(residual_kwh_next_2day):
             state['prod_sim'][f"residual_sample_{i}"] = round(float(value), 3)
 
@@ -102,17 +128,18 @@ class EnergyManagementSystem:
         return state
 
     def get_system_state(self):
-
+        """Retrieve and build the current system state."""
         prod_kwh, load_kwh, charge_kwh, grid_kwh, stored_kwh = self.get_flow_and_energy()
         load_kwh_last_2day = self.get_history()
         prod_kwh_next_2day, residual_kwh_next_2day = self.compute_production_residual()
 
-        return self.build_system_state(
+        return self._build_system_state(
             prod_kwh, load_kwh, charge_kwh, grid_kwh, stored_kwh, load_kwh_last_2day,
             prod_kwh_next_2day, residual_kwh_next_2day
         )
 
     def execute_control(self, active: bool = False):
+        """Execute a control decision using the RL model."""
         state = self.get_system_state()
         obs = np.array(list(extract_values_gen(state)))
 
@@ -143,6 +170,7 @@ class EnergyManagementSystem:
         return state, action
 
     def control_loop(self, active: bool = False):
+        """Run the control loop at 5-minute intervals."""
         try:
             while True:
                 try:
@@ -157,9 +185,9 @@ class EnergyManagementSystem:
                     'timestamp': now.timestamp(),
                     'action': int(action)
                 })
-                logging.info(f"State :{state}")
+                logging.info(f"State: {state}")
 
-                next_time = (now + timedelta(minutes=5 - now.minute % 5)).replace(second=0, microsecond=0)
+                next_time = (now + timedelta(minutes=5 - now.minute % 5)).replace(second=30, microsecond=0)
                 sleep_duration = (next_time - now).total_seconds()
 
                 sleep(sleep_duration)
