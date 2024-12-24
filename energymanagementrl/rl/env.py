@@ -151,7 +151,25 @@ class InverterEnv(gym.Env):
             self.penalty_battery_wear = 0
 
 
-class InverterEnvAlt(InverterEnv):
+class InverterEnvBatteryMgmt(InverterEnv):
+    """
+    A custom environment for managing inverter behavior with a focus on optimized battery usage.
+
+    This class extends `InverterEnv` by introducing a customized reward function that encourages
+    efficient battery charging and discharging behaviors based on solar production forecasts and
+    the battery's state of charge (SOC). The reward logic aims to:
+    - Penalize premature discharging during early night hours when solar production is forecasted
+      to remain zero for the next 1 to 3 hours.
+    - Encourage maintaining an optimal SOC during the last hour of daily solar production to
+      ensure sufficient reserves for nighttime consumption.
+
+    Parameters:
+        inverter_sim (InverterSim): The inverter simulation instance.
+        max_steps (int): The maximum number of steps in an episode.
+        reward_full_charge (float): The reward multiplier for maintaining near-full SOC.
+        penalty_early_discharge (float): The penalty multiplier for premature discharging.
+    """
+
     def __init__(
             self,
             inverter_sim: InverterSim,
@@ -166,55 +184,40 @@ class InverterEnvAlt(InverterEnv):
         self.reward_full_charge = reward_full_charge
         self.penalty_early_discharge = penalty_early_discharge
 
-    def set_reward_energy_sold(self) -> None:
+    def set_reward(self) -> float:
         """
-        Sets the reward component from energy sold to the grid.
+        Calculates the reward for the current step based on battery usage and forecasted solar production.
+        This method adjusts the base reward to encourage efficient energy management, including
+        optimal battery discharging and charging behaviors.
+
+        Specifically:
+        - Penalizes premature battery discharging during early night hours (when no solar production
+         is forecasted for the next 1 to 3 hours), while allowing discharging closer to dawn.
+        - Rewards or penalizes the battery's state of charge (SOC) during the last hour of daily solar
+         production, encouraging sufficient reserves for nighttime consumption.
+
+        Returns:
+           float: The total adjusted reward for the current step.
         """
-        super().set_reward_energy_sold()
+        super().set_reward()
+
+        # Penalize discharging the battery during the early night, defined as hours with no forecasted production,
+        # while allowing discharging closer to dawn (if the sun is expected to rise within the next 3 hours).
+        # `self.state[1:4]` represents the forecasted solar production for the next 1 to 3 hours.
+        # If there is no forecasted production in this timeframe and the last action was discharging,
+        # it indicates premature battery use, so a penalty is applied.
         if (not any(state > 0 for state in self.state[1:4])) and self.last_action == 0:
-            self.reward_energy_sold -= self.penalty_early_discharge
+            self.reward -= self.penalty_early_discharge
+
+        # Calculate the State of Charge (SOC) of the battery
         soc = self.inverter_sim.batt_sim.current_charge / self.inverter_sim.batt_sim.capacity
+
+        # Check if we are in the last hour of daily production (`self.state[0] > 0` and `self.state[1] == 0`)
+        # Apply penalties or rewards based on the battery's SOC to optimize usage for the next cycle
         if self.state[0] > 0 and self.state[1] == 0:
-            if soc < .85:
-                self.reward_energy_sold -= self.reward_full_charge
-            elif soc < .98:
-                self.reward_energy_sold += self.reward_full_charge
+            if soc < 0.90:  # Penalize if SOC is too low to ensure enough reserve for night consumption
+                self.reward -= self.reward_full_charge
+            elif soc < .98:  # Reward maintaining a near-full SOC for efficient utilization
+                self.reward += self.reward_full_charge
 
-
-class InverterEnvSimple(InverterEnv):
-
-    def __init__(
-            self,
-            inverter_sim: InverterSim,
-            max_steps: int = week,
-    ):
-        super().__init__(
-            inverter_sim,
-            max_steps
-        )
-
-        self.observation_space = spaces.Box(low=0, high=1, shape=(7,), dtype=np.float64)
-
-        # Initialize internal states
-        self.state = np.zeros(7)
-
-    def reset(
-            self,
-            seed=0,
-            **kwargs
-    ):
-        """Resets the environment for a new episode.
-        """
-        super().reset()
-        self.state = np.zeros(7)
-
-        return self.state, {}
-
-    def step(
-            self,
-            action
-    ):
-        self.state, reward, done, truncated, _ = super().step(action)
-        #         self.state= np.array([np.sin(2 * np.pi *self.state[-1]),np.cos(2 * np.pi *self.state[-1])])
-        self.state = np.array([self.state[4], *self.state[-6:]])
-        return self.state, reward, done, truncated, {}
+        return self.reward

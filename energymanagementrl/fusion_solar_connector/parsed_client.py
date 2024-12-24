@@ -152,8 +152,11 @@ def get_system_balance(prod, load, store, grid, tolerance=1e-6):
         if abs(store_balance + grid_balance + imbalance) < tolerance:
             return store_balance, grid_balance
 
+    raise FusionSolarExceptionExtended(
+        message=f"get_system_balance:{prod, load, store, grid}",
+        code=FusionSolarExceptionExtended.ErrorCode.PARSING
+    )
     # If no balance was found, return None or an appropriate value
-    return None
 
 
 def calculate_days(start_time, end_time):
