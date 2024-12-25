@@ -9,24 +9,28 @@ month = week * 4
 full_period = month * 5
 
 
-def shuffle_array_blocks(array: np.ndarray, block_size: int, max_shift: int, mix_probability: float,
-                         random_state: np.random.RandomState = None):
+def shuffle_array_blocks(
+        arrays: list[np.ndarray],
+        block_size: int,
+        max_shift: int,
+        mix_probability: float,
+        random_state: np.random.RandomState = None
+) -> list[np.ndarray]:
     """
-    Shuffle the blocks of an array with controlled randomness and shifting.
+    Shuffle blocks of arrays with optional shifting and mixing probabilities.
 
     Parameters:
-        array (np.ndarray): The input array to shuffle.
-        block_size (int): The size of each block to be shuffled.
-        max_shift (int): The maximum number of blocks to shift a block by.
-        mix_probability (float): The probability (0 to 1) of shifting a block.
-        random_state
+        arrays (list[np.ndarray]): List of arrays to shuffle. All arrays must have the same length.
+        block_size (int): Size of each block to shuffle.
+        max_shift (int): Maximum shift applied to blocks.
+        mix_probability (float): Probability of applying a shift to each block.
+        random_state (np.random.RandomState, optional): Random state for reproducibility. Defaults to None.
+
     Returns:
-        np.ndarray: A new array with the blocks shuffled according to the specified rules.
+        list[np.ndarray]: List of shuffled arrays.
 
     Raises:
-        ValueError: If block_size is not a positive integer or does not evenly divide the array length.
-        ValueError: If max_shift is negative.
-        ValueError: If mix_probability is not in the range [0, 1].
+        ValueError: If inputs are invalid.
     """
     if block_size <= 0:
         raise ValueError("block_size must be a positive integer.")
@@ -34,30 +38,40 @@ def shuffle_array_blocks(array: np.ndarray, block_size: int, max_shift: int, mix
         raise ValueError("max_shift must be a non-negative integer.")
     if not (0 <= mix_probability <= 1):
         raise ValueError("mix_probability must be between 0 and 1.")
-    if not random_state:
+    if random_state is None:
         random_state = np.random
 
-    num_blocks = len(array) // block_size
-    remainder = len(array) % block_size
+    array_length = len(arrays[0])
+    if not all(len(array) == array_length for array in arrays):
+        raise ValueError("All arrays must have the same length.")
 
-    # Generate shifts with probability
-    shifts = random_state.randint(-max_shift, max_shift + 1, num_blocks)
+    num_blocks = array_length // block_size
+    remainder = array_length % block_size
+
+    # Generate shifts with mix_probability
+    shifts = random_state.randint(-max_shift, max_shift + 1, size=num_blocks)
     shifts = np.where(random_state.random(num_blocks) < mix_probability, shifts, 0)
 
-    # Determine new block positions
+    # Calculate new block positions
     new_positions = np.clip(np.arange(num_blocks) + shifts, 0, num_blocks - 1)
 
-    # Shuffle blocks
-    reshaped_array = array[:num_blocks * block_size].reshape(num_blocks, block_size)
-    shuffled_blocks = reshaped_array[new_positions]
+    # Stack all arrays for collective reshuffling
+    stacked_arrays = np.stack(arrays, axis=0)  # Shape: (num_arrays, array_length)
 
-    # Flatten the shuffled blocks and append any remainder
-    if remainder:
-        shuffled_array = np.concatenate((shuffled_blocks.ravel(), array[-remainder:]))
+    # Reshape and shuffle collectively
+    reshaped_arrays = stacked_arrays[:, :num_blocks * block_size].reshape(-1, num_blocks, block_size)  # Shape: (num_arrays, num_blocks, block_size)
+    reshuffled_blocks = reshaped_arrays[:, new_positions, :]  # Shuffle blocks collectively
+
+    # Flatten and append remainders
+    flattened_arrays = reshuffled_blocks.reshape(stacked_arrays.shape[0], -1)  # Flatten shuffled blocks
+    if remainder > 0:
+        remainders = stacked_arrays[:, -remainder:]  # Get the remaining elements
+        final_arrays = np.hstack((flattened_arrays, remainders))  # Append remainders
     else:
-        shuffled_array = shuffled_blocks.ravel()
+        final_arrays = flattened_arrays
 
-    return shuffled_array
+    return [final_arrays[i] for i in range(final_arrays.shape[0])]
+
 
 
 class SmoothedHistory:

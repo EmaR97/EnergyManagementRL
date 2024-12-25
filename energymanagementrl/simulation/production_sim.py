@@ -163,30 +163,18 @@ class ProductionSimFromReal(ProductionSim):
         super().reset(seed, **kwargs)
         shuffle = kwargs.get('shuffle', 0)
         if shuffle > 0:
-            state = self.random_state.get_state()
-            self.energy_series = shuffle_array_blocks(
-                array=np.array(self.orig_energy_series),
-                block_size=288,
-                max_shift=2,
-                mix_probability=.25,
-                random_state=self.random_state
-            ).tolist()
-            self.random_state.set_state(state)
-            self.weather_power_series = shuffle_array_blocks(
-                array=np.array(self.original_weather_power_series),
-                block_size=288,
-                max_shift=2,
-                mix_probability=.25,
-                random_state=self.random_state
-            ).tolist()
-            self.random_state.set_state(state)
-            self.residual_series = shuffle_array_blocks(
-                array=np.array(self.original_residual_series),
-                block_size=288,
-                max_shift=2,
-                mix_probability=.25,
-                random_state=self.random_state
-            ).tolist()
+            self.energy_series, self.weather_power_series, self.residual_series = [
+                array.tolist() for array in shuffle_array_blocks(
+                    arrays=[
+                        np.array(self.orig_energy_series),
+                        np.array(self.original_weather_power_series),
+                        np.array(self.original_residual_series)
+                    ],
+                    block_size=288,
+                    max_shift=2,
+                    mix_probability=.25,
+                    random_state=self.random_state
+                )]
 
     def precompute_residual(self):
         self.residual_series = []

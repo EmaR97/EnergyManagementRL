@@ -38,12 +38,12 @@ class ConsumptionSim(EnergySim):
         super().reset(seed, **kwargs)
         if kwargs.get('shuffle', 0) > 0:
             self.energy_series = shuffle_array_blocks(
-                array=np.array(self.orig_energy_series),
+                arrays=[np.array(self.orig_energy_series)],
                 block_size=288,
                 max_shift=2,
                 mix_probability=.25,
                 random_state=self.random_state
-            ).tolist()
+            )[0].tolist()
 
     def get_energy_sample(self) -> list[int]:
         """
