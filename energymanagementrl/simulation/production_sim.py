@@ -147,28 +147,25 @@ class ProductionSimFromReal(ProductionSim):
                  seed=None
                  ) -> None:
         super().__init__(power_series, daily_sample, forecast_steps, seed)
-        self.optimal_power_series = [x * min5 for x in optimal_power_series]
-        self.weather_power_series = [x * min5 for x in weather_power_series]
-        self.residual_series = []
-        self.precompute_residual()
-        self.original_residual_series = self.residual_series
-        self.original_weather_power_series = self.weather_power_series
+        self.original_optimal_power_series = [x * min5 for x in optimal_power_series]
+        self.original_weather_power_series = [x * min5 for x in weather_power_series]
+        self.optimal_power_series = self.original_optimal_power_series
+        self.weather_power_series = self.original_weather_power_series
 
     def get_state(self):
         state = super().get_state()
-        state.update({f"residual_sample_{i}": value for i, value in enumerate(self.get_residual_sample())})
+        state.update({f"optimal_sample_{i}": value for i, value in enumerate(self.get_optimal_forecast_sample())})
         return state
 
     def reset(self, seed=None, **kwargs):
         super().reset(seed, **kwargs)
-        shuffle = kwargs.get('shuffle', 0)
-        if shuffle > 0:
-            self.energy_series, self.weather_power_series, self.residual_series = [
+        if kwargs.get('shuffle', 0) > 0:
+            self.energy_series, self.weather_power_series, self.optimal_power_series = [
                 array.tolist() for array in shuffle_array_blocks(
                     arrays=[
                         np.array(self.orig_energy_series),
                         np.array(self.original_weather_power_series),
-                        np.array(self.original_residual_series)
+                        np.array(self.original_optimal_power_series)
                     ],
                     block_size=288,
                     max_shift=2,
@@ -176,16 +173,31 @@ class ProductionSimFromReal(ProductionSim):
                     random_state=self.random_state
                 )]
 
-    def precompute_residual(self):
-        self.residual_series = []
-        for i in range(len(self.optimal_power_series)):
-            residual = abs(self.optimal_power_series[i] - self.weather_power_series[i])
-            self.residual_series.append(residual)
-
-    def get_residual_sample(self) -> list[int]:
-        sample = [int(self.residual_series[self.step_index + i]) for i in self.forecast_range]
+    def get_optimal_forecast_sample(self) -> list[int]:
+        sample = [int(self.optimal_power_series[self.step_index + i]) for i in self.forecast_range]
         return np.array(sample) @ sparse_matrix
 
     def get_energy_sample(self) -> list[int]:
         sample = [int(self.weather_power_series[self.step_index + i]) for i in self.forecast_range]
         return np.array(sample) @ sparse_matrix
+
+
+class ProductionSimFromRealV2(ProductionSimFromReal):
+    def get_state(self):
+        state = super().get_state()
+        state.update({f"error_sample_{i}": value for i, value in enumerate(self.get_error_hist_sample())})
+        return state
+
+    def get_error_hist_sample(self) -> list[int]:
+        length = 12
+        sample = [
+            int(self.energy_series[i]) - int(self.weather_power_series[i])
+            for i in range(max(0, self.step_index - length), self.step_index)
+        ]
+        # Ensure the resulting array is of length 12
+        if sample:  # Check if the sample is not empty
+            while len(sample) < length:
+                sample.insert(0, sample[0])  # Repeat the first element
+        else:  # If the sample is empty, fill it with zeroes or another default value
+            sample = [0] * length
+        return sample
