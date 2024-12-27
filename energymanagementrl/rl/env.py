@@ -166,7 +166,6 @@ class InverterEnvBatteryMgmt(InverterEnv):
     Parameters:
         inverter_sim (InverterSim): The inverter simulation instance.
         max_steps (int): The maximum number of steps in an episode.
-        reward_full_charge (float): The reward multiplier for maintaining near-full SOC.
         penalty_early_discharge (float): The penalty multiplier for premature discharging.
     """
 
@@ -174,15 +173,25 @@ class InverterEnvBatteryMgmt(InverterEnv):
             self,
             inverter_sim: InverterSim,
             max_steps: int = week,
-            reward_full_charge: float = .01,
+            reward_near_full: float = .01,
+            penalty_below_night_reserve: float = .01,
+            penalty_below_min_reserve: float = .01,
             penalty_early_discharge: float = 1,
+            night_reserver: float = .9,
+            near_full: float = .98,
+            min_reserve: float = .1,
     ):
         super().__init__(
             inverter_sim,
             max_steps
         )
-        self.reward_full_charge = reward_full_charge
+        self.reward_near_full = reward_near_full
+        self.penalty_below_night_reserve = penalty_below_night_reserve
         self.penalty_early_discharge = penalty_early_discharge
+        self.penalty_below_min_reserve = penalty_below_min_reserve
+        self.night_reserver = night_reserver
+        self.near_full = near_full
+        self.min_reserve = min_reserve
 
     def set_reward(self) -> float:
         """
@@ -215,9 +224,10 @@ class InverterEnvBatteryMgmt(InverterEnv):
         # Check if we are in the last hour of daily production (`self.state[0] > 0` and `self.state[1] == 0`)
         # Apply penalties or rewards based on the battery's SOC to optimize usage for the next cycle
         if self.state[0] > 0 and self.state[1] == 0:
-            if soc < 0.90:  # Penalize if SOC is too low to ensure enough reserve for night consumption
-                self.reward -= self.reward_full_charge
-            elif soc < .98:  # Reward maintaining a near-full SOC for efficient utilization
-                self.reward += self.reward_full_charge
-
+            if soc < self.night_reserver:  # Penalize if SOC is too low to ensure enough reserve for night consumption
+                self.reward -= self.penalty_below_night_reserve
+            elif soc < self.near_full:  # Reward maintaining a near-full SOC for efficient utilization
+                self.reward += self.reward_near_full
+        if soc < self.min_reserve:
+            self.reward -= self.penalty_below_min_reserve
         return self.reward
