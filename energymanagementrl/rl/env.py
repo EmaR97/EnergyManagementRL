@@ -2,8 +2,7 @@ import numpy as np
 from gymnasium import spaces
 import gymnasium as gym
 
-from .utils import extract_values_gen, flatten_dict
-from ..simulation import InverterSim, week
+from ..simulation import InverterSim
 
 
 class InverterEnv(gym.Env):
@@ -29,7 +28,7 @@ class InverterEnv(gym.Env):
     def __init__(
             self,
             inverter_sim: InverterSim,
-            max_steps: int = week,
+            max_steps: int,
     ):
         """
         Initializes the environment for inverter simulation.
@@ -40,7 +39,7 @@ class InverterEnv(gym.Env):
         """
         super(InverterEnv, self).__init__()
         self.inverter_sim = inverter_sim
-        self.state_size = len(list(extract_values_gen(self.inverter_sim.get_state())))
+        self.state_size = len(self.inverter_sim.get_state())
         self._max_steps = None
         self.set_max_steps(max_steps)
         self.current_step = 0
@@ -96,12 +95,12 @@ class InverterEnv(gym.Env):
         Updates the state by retrieving current values from the inverter simulation
         and applying normalization if specified.
         """
-        values = np.array(list(extract_values_gen(self.inverter_sim.get_state())))
+        values = np.array(self.inverter_sim.get_state().values())
         # Apply scaling factors for normalization
         self.state = values * self.inv_factors
 
     def get_state_dict(self):
-        state = dict(flatten_dict(self.inverter_sim.get_state()))
+        state = self.inverter_sim.get_state()
         state = {key: value / 1000 for key, value in state.items()}
         state['reward_energy_sold'] = self.reward_energy_sold
         state['penalty_energy_purchase'] = self.penalty_energy_purchase
@@ -172,7 +171,7 @@ class InverterEnvBatteryMgmt(InverterEnv):
     def __init__(
             self,
             inverter_sim: InverterSim,
-            max_steps: int = week,
+            max_steps: int,
             reward_near_full: float = .01,
             penalty_below_night_reserve: float = .01,
             penalty_below_min_reserve: float = .01,

@@ -134,11 +134,10 @@ class InverterSim(BaseSim):
             self.prod_sim.step_index = starting_step
 
     def get_state(self):
-        state = {
-            'prod_sim': self.prod_sim.get_state(),
-            'cons_sim': self.cons_sim.get_state(),
-            'batt_sim': self.batt_sim.get_state(),
-            'grid_sim': self.grid_sim.get_state()
-        }
-        state['prod_sim']['energy'] -= self.energy_balance
+        state = {}
+        state.update({'prod_sim.' + key: value for key, value in self.prod_sim.get_state().items()})
+        state.update({'cons_sim.' + key: value for key, value in self.cons_sim.get_state().items()})
+        state.update({'batt_sim.' + key: value for key, value in self.batt_sim.get_state().items()})
+        state.update({'grid_sim.' + key: value for key, value in self.grid_sim.get_state().items()})
+        state['prod_sim.energy'] -= self.energy_balance
         return state
