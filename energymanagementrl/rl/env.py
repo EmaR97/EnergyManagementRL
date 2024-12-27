@@ -95,7 +95,7 @@ class InverterEnv(gym.Env):
         Updates the state by retrieving current values from the inverter simulation
         and applying normalization if specified.
         """
-        values = np.array(self.inverter_sim.get_state().values())
+        values = np.array(list(self.inverter_sim.get_state().values()))
         # Apply scaling factors for normalization
         self.state = values * self.inv_factors
 
