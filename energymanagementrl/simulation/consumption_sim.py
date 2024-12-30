@@ -26,7 +26,8 @@ class ConsumptionSim(EnergySim):
         """
         super().__init__(power_series, daily_sample, forecast_steps, seed)
         history = SmoothedHistory(12, self.forecast_steps * self.sample_size)
-
+        self.max_shift = 2
+        self.mix_probability = .25
         self.energy_samples = [history.get_smoothed_history(sample, self.forecast_range) for sample in
                                self.energy_series]
 
@@ -40,8 +41,8 @@ class ConsumptionSim(EnergySim):
             self.energy_series = shuffle_array_blocks(
                 arrays=[np.array(self.orig_energy_series)],
                 block_size=288,
-                max_shift=2,
-                mix_probability=.25,
+                max_shift=self.max_shift,
+                mix_probability=self.mix_probability,
                 random_state=self.random_state
             )[0].tolist()
 

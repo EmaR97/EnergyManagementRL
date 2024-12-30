@@ -43,6 +43,7 @@ class ProductionSim(EnergySim):
         state['energy'] = self.get_energy()
         return state
 
+
 class ProductionSimFromReal(ProductionSim):
     def __init__(self,
                  power_series: list[float],
@@ -59,6 +60,8 @@ class ProductionSimFromReal(ProductionSim):
         self.precompute_residual()
         self.original_residual_series = self.residual_series
         self.original_weather_power_series = self.weather_power_series
+        self.max_shift = 2
+        self.mix_probability = .25
 
     def get_state(self):
         state = super().get_state()
@@ -77,8 +80,8 @@ class ProductionSimFromReal(ProductionSim):
                         np.array(self.original_residual_series)
                     ],
                     block_size=288,
-                    max_shift=2,
-                    mix_probability=.25,
+                    max_shift=self.max_shift,
+                    mix_probability=self.mix_probability,
                     random_state=self.random_state
                 )]
 
