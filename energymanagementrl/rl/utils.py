@@ -1,5 +1,7 @@
+import torch
 from matplotlib import pyplot as plt
 import pandas as pd
+from stable_baselines3 import DQN
 
 
 def test_plot(env, model, steps, to_show=None, seed=None, ):
@@ -17,11 +19,12 @@ def test_plot(env, model, steps, to_show=None, seed=None, ):
         state_history
     )
 
+    results = f"{sum(state_df.reward):.1f}=" \
+              f"{sum(state_df.reward_energy_sold):.1f}" \
+              f"-{sum(state_df.penalty_energy_purchase) :.1f}" \
+              f"-{sum(state_df.penalty_battery_wear):.1f}"
     print(
-        f"{sum(state_df.reward):.1f}="
-        f"{sum(state_df.reward_energy_sold):.1f}"
-        f"-{sum(state_df.penalty_energy_purchase) :.1f}"
-        f"-{sum(state_df.penalty_battery_wear):.1f}"
+        results
     )
     state_df['batt_sim.stored'] = state_df['batt_sim.stored'] / 10
     state_df.reward = state_df.reward * 10
@@ -35,6 +38,14 @@ def test_plot(env, model, steps, to_show=None, seed=None, ):
     plt.legend()
     plt.title('State Evolution over Time Steps')
     plt.show()
+    return results
+
+
+def load_model_with_weights(env, weight_path, policy="MlpPolicy"):
+    model = DQN(policy, env)  # Initialize the model with the specified environment
+    policy_weights = torch.load(weight_path, weights_only=False)  # Load the policy weights
+    model.policy.load_state_dict(policy_weights)  # Load weights into the model's policy
+    return model
 
 
 def extract_values_gen(d):
