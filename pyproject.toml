@@ -9,6 +9,3 @@ readme = "README.md"
 [project]
 license = {file = "LICENSE"}
 
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
