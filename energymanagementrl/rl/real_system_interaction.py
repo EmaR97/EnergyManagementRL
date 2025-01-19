@@ -176,33 +176,57 @@ class EnergyManagementSystem:
 
         return state, action
 
-    def control_loop(self, active: bool = False):
+    def control_loop(self, active: bool = False, retry_delay: int = 10, retry_attempts: int = 10):
         """Run the control loop at 5-minute intervals."""
         try:
             while True:
-                try:
-                    state, action = self.execute_control(active=active)
-                except (FusionSolarExceptionExtended, RemoteDisconnected) as e:
-                    logging.error(f"Error: {e.code}")
-                    sleep(10)
-                    continue
+                if self._is_scheduled_stop():
+                    logging.info("Control loop stopping at scheduled time.")
+                    break
 
-                now = datetime.now()
-                state.update({
-                    'timestamp': now.timestamp(),
-                    'action': int(action)
-                })
-                logging.info(f"State: {state}")
-
-                next_time = (now + timedelta(minutes=5 - now.minute % 5)).replace(second=30, microsecond=0)
-                sleep_duration = (next_time - now).total_seconds()
-
-                sleep(sleep_duration)
+                self._run_control_cycle(active, retry_delay)
 
         finally:
+            logging.warning("Control loop terminated")
             if active:
+                self._reset_battery_mode(retry_delay, retry_attempts)
+
+    def _is_scheduled_stop(self) -> bool:
+        """Check if the current time falls within the scheduled stop period."""
+        now = datetime.now()
+        return now.hour in (11, 23) and now.minute >= 55
+
+    def _run_control_cycle(self, active: bool, retry_delay: int):
+        """Execute a single control cycle."""
+        try:
+            state, action = self.execute_control(active=active)
+        except (FusionSolarExceptionExtended, RemoteDisconnected) as e:
+            logging.error(f"Error: {e.code}")
+            sleep(retry_delay)
+            return
+
+        now = datetime.now()
+        state.update({
+            'timestamp': now.timestamp(),
+            'action': int(action)
+        })
+        logging.info(f"State: {state}")
+
+        next_time = (now + timedelta(minutes=5 - now.minute % 5)).replace(second=30, microsecond=0)
+        sleep_duration = (next_time - now).total_seconds()
+        sleep(sleep_duration)
+
+    def _reset_battery_mode(self, retry_delay: int, retry_attempts: int):
+        """Reset the battery mode with retries."""
+        for attempt in range(retry_attempts):
+            try:
                 self.client.set_battery_working_mode(
                     self.battery_id,
                     FusionSolarClientParsed.BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION
                 )
-            logging.warning("Control loop terminated, battery mode reset.")
+                logging.warning("Battery mode reset")
+                break
+            except (FusionSolarExceptionExtended, RemoteDisconnected) as e:
+                logging.error(f"Attempt-{attempt} failed. Error: {e.code}")
+                sleep(retry_delay)
+
