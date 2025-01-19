@@ -159,9 +159,15 @@ class EnergyManagementSystem:
         )
 
         if active:
+            try:
+                current_mode = int(self.client.get_battery_status(self.battery_id)[1]['realValue'])
+            except ValueError as e:
+                logging.error(e)
+                raise FusionSolarExceptionExtended('', FusionSolarExceptionExtended.ErrorCode.PARSING)
+
             current_state = (
                 FusionSolarClientParsed.BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION
-                if int(self.client.get_battery_status(self.battery_id)[1]['realValue']) == '4' else
+                if current_mode == '4' else
                 FusionSolarClientParsed.BatteryWorkingMode.FULLY_FEED_TO_GRID
             )
             if battery_mode.value != current_state:
