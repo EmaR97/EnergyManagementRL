@@ -1,4 +1,5 @@
 import logging
+from http.client import RemoteDisconnected
 from time import sleep
 from datetime import timedelta, datetime
 
@@ -175,7 +176,7 @@ class EnergyManagementSystem:
             while True:
                 try:
                     state, action = self.execute_control(active=active)
-                except FusionSolarExceptionExtended as e:
+                except (FusionSolarExceptionExtended, RemoteDisconnected) as e:
                     logging.error(f"Error: {e.code}")
                     sleep(10)
                     continue
