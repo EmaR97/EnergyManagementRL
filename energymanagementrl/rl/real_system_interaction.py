@@ -200,8 +200,8 @@ class EnergyManagementSystem:
         """Execute a single control cycle."""
         try:
             state, action = self.execute_control(active=active)
-        except (FusionSolarExceptionExtended, RemoteDisconnected) as e:
-            logging.error(f"Error: {e.code}")
+        except (FusionSolarExceptionExtended, RemoteDisconnected, ConnectionError) as e:
+            logging.error(f"Error: {getattr(e, 'code', str(e))}")
             sleep(retry_delay)
             return
 
@@ -226,7 +226,9 @@ class EnergyManagementSystem:
                 )
                 logging.warning("Battery mode reset")
                 break
-            except (FusionSolarExceptionExtended, RemoteDisconnected) as e:
-                logging.error(f"Attempt-{attempt} failed. Error: {e.code}")
+            except (FusionSolarExceptionExtended, RemoteDisconnected, ConnectionError) as e:
+                logging.error(f"Attempt-{attempt} failed. Error: {getattr(e, 'code', str(e))}")
                 sleep(retry_delay)
-
+            except Exception as e:
+                logging.critical(f"Unexpected error during battery mode reset: {str(e)}")
+                break
