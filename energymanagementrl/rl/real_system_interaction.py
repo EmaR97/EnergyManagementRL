@@ -1,5 +1,8 @@
 import logging
 from http.client import RemoteDisconnected
+
+from requests.exceptions import ConnectionError
+
 from time import sleep
 from datetime import timedelta, datetime
 
