@@ -25,7 +25,7 @@ class FusionSolarClientExtended(FusionSolarClient):
         super().__init__(*args, **kwargs)
 
     @logged_in
-    def keep_alive(self, max_retries=5, backoff_factor=10) -> str:
+    def keep_alive(self, max_retries=5, backoff_factor=30) -> str:
         for i in range(max_retries):
             try:
                 return super().keep_alive()
