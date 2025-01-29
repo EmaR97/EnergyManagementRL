@@ -4,6 +4,7 @@ from typing import List
 
 from fusion_solar_py.client import FusionSolarClient, logged_in
 from fusion_solar_py.exceptions import FusionSolarException
+from tornado.gen import sleep
 
 
 class FusionSolarExceptionExtended(FusionSolarException):
@@ -22,6 +23,17 @@ class FusionSolarClientExtended(FusionSolarClient):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    @logged_in
+    def keep_alive(self, max_retries=5, backoff_factor=10) -> str:
+        for i in range(max_retries):
+            try:
+                return super().keep_alive()
+            except FusionSolarException as e:
+                if not e.args or e.args[0] != "Failed to reset session and login again.":
+                    raise
+                sleep(backoff_factor)
+        raise RuntimeError("keep_alive failed after multiple attempts.")
 
     class BatteryWorkingMode(Enum):
         MAXIMUM_SELF_CONSUMPTION = 2

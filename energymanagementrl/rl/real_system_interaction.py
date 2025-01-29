@@ -2,7 +2,6 @@ import logging
 from http.client import RemoteDisconnected
 
 from fusion_solar_py.exceptions import FusionSolarException
-from mpmath.libmp import e_fixed
 from requests.exceptions import ConnectionError
 
 from time import sleep
@@ -210,7 +209,7 @@ class EnergyManagementSystem:
             sleep(retry_delay)
             return
         except FusionSolarException as e:
-            if not e.args or e.args[0]!="Failed to reset session and login again.":
+            if not e.args or e.args[0] != "Failed to reset session and login again.":
                 raise e
             logging.warning(f"Resetting session")
             self.client._configure_session()
