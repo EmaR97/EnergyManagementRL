@@ -1,20 +1,18 @@
 import logging
-from http.client import RemoteDisconnected
-
-from fusion_solar_py.exceptions import FusionSolarException
-from requests.exceptions import ConnectionError
-
-from time import sleep
 from datetime import timedelta, datetime
+from http.client import RemoteDisconnected
+from time import sleep
 
 import numpy as np
 import pandas as pd
+from fusion_solar_py.exceptions import FusionSolarException
+from requests.exceptions import ConnectionError
 from stable_baselines3 import DQN
 
 from energymanagementrl.fusion_solar_connector import *
 from energymanagementrl.production_forecast import *
-from energymanagementrl.simulation import sparse_matrix
 from energymanagementrl.rl import extract_values_gen
+from energymanagementrl.simulation import sparse_matrix
 
 
 class EnergyManagementSystem:
@@ -48,6 +46,8 @@ class EnergyManagementSystem:
         self.model: DQN = model
         self.battery_capacity_kw = battery_capacity_kw
         self.battery_min_percentage = battery_min_percentage
+        self.active = False
+        self.action = False
 
     def get_flow_and_energy(self):
         """Retrieve and calculate energy flow data from the plant."""
@@ -143,7 +143,7 @@ class EnergyManagementSystem:
             prod_kwh_next_2day, residual_kwh_next_2day
         )
 
-    def execute_control(self, active: bool = False):
+    def execute_control(self):
         """Execute a control decision using the RL model."""
         state = self.get_system_state()
         obs = np.array(list(extract_values_gen(state)))
@@ -162,7 +162,7 @@ class EnergyManagementSystem:
             FusionSolarClientParsed.BatteryWorkingMode.FULLY_FEED_TO_GRID
         )
 
-        if active:
+        if self.get_active():
             try:
                 current_mode = int(self.client.get_battery_status(self.battery_id)[1]['realValue'])
             except ValueError as e:
@@ -177,22 +177,23 @@ class EnergyManagementSystem:
             if battery_mode.value != current_state:
                 self.client.set_battery_working_mode(self.battery_id, battery_mode)
         logging.warning(f"Battery Mode: {battery_mode.name}")
-
+        self.set_action(battery_mode.name)
         return state, action
 
     def control_loop(self, active: bool = False, retry_delay: int = 10, retry_attempts: int = 10):
         """Run the control loop at 5-minute intervals."""
+        self.active = active
         try:
             while True:
                 if self._is_scheduled_stop():
                     logging.info("Control loop stopping at scheduled time.")
                     break
 
-                self._run_control_cycle(active, retry_delay)
+                self._run_control_cycle(retry_delay)
 
         finally:
             logging.warning("Control loop terminated")
-            if active:
+            if self.get_active():
                 self._reset_battery_mode(retry_delay, retry_attempts)
 
     def _is_scheduled_stop(self) -> bool:
@@ -200,10 +201,10 @@ class EnergyManagementSystem:
         now = datetime.now()
         return now.hour in (11, 23) and now.minute >= 55
 
-    def _run_control_cycle(self, active: bool, retry_delay: int):
+    def _run_control_cycle(self, retry_delay: int):
         """Execute a single control cycle."""
         try:
-            state, action = self.execute_control(active=active)
+            state, action = self.execute_control()
         except (FusionSolarExceptionExtended, RemoteDisconnected, ConnectionError) as e:
             logging.error(f"Error: {getattr(e, 'code', str(e))}")
             sleep(retry_delay)
@@ -241,3 +242,38 @@ class EnergyManagementSystem:
             except Exception as e:
                 logging.critical(f"Unexpected error during battery mode reset: {str(e)}")
                 break
+
+    def get_active(self):
+        return self.active
+
+    def set_action(self, action):
+        self.action = action
+
+
+class EnergyManagementSystemTBot(EnergyManagementSystem):
+
+    def __init__(
+            self,
+            shared_active_ref, shared_result_ref,
+            client: FusionSolarClientParsed,
+            plant_id: str,
+            battery_id: str,
+            production_forecaster: EnergyPredictionSystem,
+            model: DQN,
+            battery_capacity_kw: int = 10,
+            battery_min_percentage: int = 10,
+
+    ):
+        super().__init__(client, plant_id, battery_id, production_forecaster, model, battery_capacity_kw,
+                         battery_min_percentage)
+        self.shared_active_ref = shared_active_ref
+        self.shared_result_ref = shared_result_ref
+
+    def get_active(self):
+        active = self.shared_active_ref[0] if self.shared_active_ref[0] else self.active
+        logging.warning(f"get_active: {active}")
+        return active
+
+    def set_action(self, action):
+        logging.warning(f"set_action: {action}")
+        self.shared_result_ref[0] = action
