@@ -157,9 +157,8 @@ class EnergyManagementSystem:
         self.set_last_battery_mode(battery_mode.name)
         return state, action
 
-    def control_loop(self, active: bool = False, retry_delay: int = 10, retry_attempts: int = 10):
+    def control_loop(self, retry_delay: int = 10, retry_attempts: int = 10):
         """Run the control loop at 5-minute intervals."""
-        self.active = active
         try:
             while True:
                 if _is_scheduled_stop():
