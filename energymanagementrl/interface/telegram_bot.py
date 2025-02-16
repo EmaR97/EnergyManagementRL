@@ -3,6 +3,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, MessageHandler, Application, filters, CallbackQueryHandler
 
+from energymanagementrl.fusion_solar_connector import FusionSolarExceptionExtended
 from energymanagementrl.rl import EnergyManagementSystem
 
 logger = logging.getLogger()
@@ -35,12 +36,13 @@ def start_bot(system: EnergyManagementSystem, token: str):
     async def handle_execute_control(update: Update, context: CallbackContext):
         # Send acknowledgment message
         await update.message.reply_text("Execution started...")
-
-        # Execute control logic
-        result = system.execute_control()
-
-        # Send the final result
-        await update.message.reply_text(f"Execution control result: {result}")
+        try:
+            # Execute control logic
+            system.execute_control()
+            # Send the final result
+            await update.message.reply_text(f"Execution control result: {system.get_last_battery_mode()}")
+        except FusionSolarExceptionExtended as e:
+            await update.message.reply_text(f"Execution control failed: {e.code}")
 
     async def handle_invalid(update: Update, context: CallbackContext):
         await update.message.reply_text("Invalid command! Use '/help' for a list of commands.")
