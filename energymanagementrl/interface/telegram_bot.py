@@ -33,7 +33,14 @@ def start_bot(system: EnergyManagementSystem, token: str):
         await update.message.reply_text(f"Current Battery Mode: {system.get_last_battery_mode()}")
 
     async def handle_execute_control(update: Update, context: CallbackContext):
-        await update.message.reply_text(f"Execution control: {system.execute_control()}")
+        # Send acknowledgment message
+        await update.message.reply_text("Execution started...")
+
+        # Execute control logic
+        result = system.execute_control()
+
+        # Send the final result
+        await update.message.reply_text(f"Execution control result: {result}")
 
     async def handle_invalid(update: Update, context: CallbackContext):
         await update.message.reply_text("Invalid command! Use '/help' for a list of commands.")
