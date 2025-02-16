@@ -3,3 +3,4 @@
 /logs
 /notebooks/.cache.sqlite
 /notebooks/.log
+/data
