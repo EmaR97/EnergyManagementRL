@@ -143,19 +143,23 @@ class EnergyManagementSystem:
             FusionSolarClientParsed.BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION if action == 1 else FusionSolarClientParsed.BatteryWorkingMode.FULLY_FEED_TO_GRID)
 
         if self.get_active():
-            try:
-                current_mode = int(self.client.get_battery_status(self.battery_id)[1]['realValue'])
-            except ValueError as e:
-                logging.error(e)
-                raise FusionSolarExceptionExtended('', FusionSolarExceptionExtended.ErrorCode.PARSING)
-
-            current_state = (
-                FusionSolarClientParsed.BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION if current_mode == '4' else FusionSolarClientParsed.BatteryWorkingMode.FULLY_FEED_TO_GRID)
+            current_state = self.get_real_battery_mode()
             if battery_mode.value != current_state:
                 self.client.set_battery_working_mode(self.battery_id, battery_mode)
         logging.warning(f"Battery Mode: {battery_mode.name}")
         self.set_last_battery_mode(battery_mode.name)
         return state, action
+
+    def get_real_battery_mode(self):
+        try:
+            current_mode = int(self.client.get_battery_status(self.battery_id)[1]['realValue'])
+        except ValueError as e:
+            logging.error(e)
+            raise FusionSolarExceptionExtended('', FusionSolarExceptionExtended.ErrorCode.PARSING)
+        current_state = (
+            FusionSolarClientParsed.BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION if current_mode == 4 else FusionSolarClientParsed.BatteryWorkingMode.FULLY_FEED_TO_GRID)
+
+        return current_state
 
     def control_loop(self, retry_delay: int = 10, retry_attempts: int = 10):
         """Run the control loop at 5-minute intervals."""
