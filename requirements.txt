@@ -10,3 +10,5 @@ pvlib~=0.11.1
 fusion_solar_py~=0.0.26
 torch~=2.5.1
 requests~=2.32.3
+python-telegram-bot~=21.10
+tornado~=6.4.1
