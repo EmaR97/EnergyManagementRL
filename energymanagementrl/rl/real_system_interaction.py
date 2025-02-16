@@ -15,6 +15,12 @@ from energymanagementrl.rl import extract_values_gen
 from energymanagementrl.simulation import sparse_matrix
 
 
+def _is_scheduled_stop() -> bool:
+    """Check if the current time falls within the scheduled stop period."""
+    now = datetime.now()
+    return now.hour in (11, 23) and now.minute >= 55
+
+
 class EnergyManagementSystem:
     """
     Manages energy flows and controls battery systems based on real-time data and predictions.
@@ -29,16 +35,9 @@ class EnergyManagementSystem:
         battery_min_percentage: Minimum state of charge as a percentage.
     """
 
-    def __init__(
-            self,
-            client: FusionSolarClientParsed,
-            plant_id: str,
-            battery_id: str,
-            production_forecaster: EnergyPredictionSystem,
-            model: DQN,
-            battery_capacity_kw: int = 10,
-            battery_min_percentage: int = 10
-    ):
+    def __init__(self, client: FusionSolarClientParsed, plant_id: str, battery_id: str,
+            production_forecaster: EnergyPredictionSystem, model: DQN, battery_capacity_kw: int = 10,
+            battery_min_percentage: int = 10):
         self.client: FusionSolarClientParsed = client
         self.plant_id: str = plant_id
         self.battery_id: str = battery_id
@@ -47,7 +46,7 @@ class EnergyManagementSystem:
         self.battery_capacity_kw = battery_capacity_kw
         self.battery_min_percentage = battery_min_percentage
         self.active = False
-        self.action = False
+        self.last_battery_mode = None
 
     def get_flow_and_energy(self):
         """Retrieve and calculate energy flow data from the plant."""
@@ -59,15 +58,9 @@ class EnergyManagementSystem:
     def get_history(self):
         """Retrieve and process historical load data."""
         now = datetime.now()
-        history = pd.concat([
-            self.client.get_plant_stats_parsed(
-                self.plant_id,
-                query_time=self.client._get_day_start_sec() + i * self.client.MILLISECONDS_IN_A_DAY,
-                time_zone=2,
-                time_zone_str='Europe/Rome'
-            )
-            for i in [-2, -1, 0]
-        ]).usePower
+        history = pd.concat([self.client.get_plant_stats_parsed(self.plant_id,
+            query_time=self.client._get_day_start_sec() + i * self.client.MILLISECONDS_IN_A_DAY, time_zone=2,
+            time_zone_str='Europe/Rome') for i in [-2, -1, 0]]).usePower
 
         history = history[history.index <= now][-288 * 2:].replace('--', np.nan)
         history = history.astype('float')
@@ -101,16 +94,10 @@ class EnergyManagementSystem:
         return prod_kwh_next_2day, residual_kwh_next_2day
 
     @staticmethod
-    def _build_system_state(prod_kwh: float, load_kwh: float, charge_kwh: float, grid_kwh: float,
-                            stored_kwh: float, load_kwh_last_2day,
-                            prod_kwh_next_2day, residual_kwh_next_2day) -> dict[str, any]:
+    def _build_system_state(prod_kwh: float, load_kwh: float, charge_kwh: float, grid_kwh: float, stored_kwh: float,
+                            load_kwh_last_2day, prod_kwh_next_2day, residual_kwh_next_2day) -> dict[str, any]:
         """Construct the system state from energy data."""
-        state = {
-            'prod_sim': {},
-            'cons_sim': {},
-            'batt_sim': {},
-            'grid_sim': {},
-        }
+        state = {'prod_sim': {}, 'cons_sim': {}, 'batt_sim': {}, 'grid_sim': {}, }
 
         for i, value in enumerate(prod_kwh_next_2day):
             state['prod_sim'][f"energy_sample_{i}"] = round(float(value), 3)
@@ -138,10 +125,8 @@ class EnergyManagementSystem:
         load_kwh_last_2day = self.get_history()
         prod_kwh_next_2day, residual_kwh_next_2day = self.compute_production_residual()
 
-        return self._build_system_state(
-            prod_kwh, load_kwh, charge_kwh, grid_kwh, stored_kwh, load_kwh_last_2day,
-            prod_kwh_next_2day, residual_kwh_next_2day
-        )
+        return self._build_system_state(prod_kwh, load_kwh, charge_kwh, grid_kwh, stored_kwh, load_kwh_last_2day,
+            prod_kwh_next_2day, residual_kwh_next_2day)
 
     def execute_control(self):
         """Execute a control decision using the RL model."""
@@ -149,18 +134,13 @@ class EnergyManagementSystem:
         obs = np.array(list(extract_values_gen(state)))
 
         if len(obs) != 55:
-            raise FusionSolarExceptionExtended(
-                "Invalid observation length",
-                FusionSolarExceptionExtended.ErrorCode.PARSING
-            )
+            raise FusionSolarExceptionExtended("Invalid observation length",
+                FusionSolarExceptionExtended.ErrorCode.PARSING)
 
         action, _ = self.model.predict(obs)
 
         battery_mode = (
-            FusionSolarClientParsed.BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION
-            if action == 1 else
-            FusionSolarClientParsed.BatteryWorkingMode.FULLY_FEED_TO_GRID
-        )
+            FusionSolarClientParsed.BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION if action == 1 else FusionSolarClientParsed.BatteryWorkingMode.FULLY_FEED_TO_GRID)
 
         if self.get_active():
             try:
@@ -170,14 +150,11 @@ class EnergyManagementSystem:
                 raise FusionSolarExceptionExtended('', FusionSolarExceptionExtended.ErrorCode.PARSING)
 
             current_state = (
-                FusionSolarClientParsed.BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION
-                if current_mode == '4' else
-                FusionSolarClientParsed.BatteryWorkingMode.FULLY_FEED_TO_GRID
-            )
+                FusionSolarClientParsed.BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION if current_mode == '4' else FusionSolarClientParsed.BatteryWorkingMode.FULLY_FEED_TO_GRID)
             if battery_mode.value != current_state:
                 self.client.set_battery_working_mode(self.battery_id, battery_mode)
         logging.warning(f"Battery Mode: {battery_mode.name}")
-        self.set_action(battery_mode.name)
+        self.set_last_battery_mode(battery_mode.name)
         return state, action
 
     def control_loop(self, active: bool = False, retry_delay: int = 10, retry_attempts: int = 10):
@@ -185,7 +162,7 @@ class EnergyManagementSystem:
         self.active = active
         try:
             while True:
-                if self._is_scheduled_stop():
+                if _is_scheduled_stop():
                     logging.info("Control loop stopping at scheduled time.")
                     break
 
@@ -195,11 +172,6 @@ class EnergyManagementSystem:
             logging.warning("Control loop terminated")
             if self.get_active():
                 self._reset_battery_mode(retry_delay, retry_attempts)
-
-    def _is_scheduled_stop(self) -> bool:
-        """Check if the current time falls within the scheduled stop period."""
-        now = datetime.now()
-        return now.hour in (11, 23) and now.minute >= 55
 
     def _run_control_cycle(self, retry_delay: int):
         """Execute a single control cycle."""
@@ -216,10 +188,7 @@ class EnergyManagementSystem:
             self.client._configure_session()
             return
         now = datetime.now()
-        state.update({
-            'timestamp': now.timestamp(),
-            'action': int(action)
-        })
+        state.update({'timestamp': now.timestamp(), 'action': int(action)})
         logging.info(f"State: {state}")
 
         next_time = (now + timedelta(minutes=5 - now.minute % 5)).replace(second=30, microsecond=0)
@@ -230,10 +199,8 @@ class EnergyManagementSystem:
         """Reset the battery mode with retries."""
         for attempt in range(retry_attempts):
             try:
-                self.client.set_battery_working_mode(
-                    self.battery_id,
-                    FusionSolarClientParsed.BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION
-                )
+                self.client.set_battery_working_mode(self.battery_id,
+                    FusionSolarClientParsed.BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION)
                 logging.warning("Battery mode reset")
                 break
             except (FusionSolarExceptionExtended, RemoteDisconnected, ConnectionError) as e:
@@ -243,37 +210,30 @@ class EnergyManagementSystem:
                 logging.critical(f"Unexpected error during battery mode reset: {str(e)}")
                 break
 
-    def get_active(self):
+    def set_active(self, is_active: bool):
+        """
+
+        :param is_active:
+        """
+        self.active = is_active
+
+    def get_active(self) -> bool:
+        """
+
+        :return:
+        """
         return self.active
 
-    def set_action(self, action):
-        self.action = action
+    def get_last_battery_mode(self) -> str:
+        """
 
+        :return:
+        """
+        return self.last_battery_mode
 
-class EnergyManagementSystemTBot(EnergyManagementSystem):
+    def set_last_battery_mode(self, battery_mode: str):
+        """
 
-    def __init__(
-            self,
-            shared_active_ref, shared_result_ref,
-            client: FusionSolarClientParsed,
-            plant_id: str,
-            battery_id: str,
-            production_forecaster: EnergyPredictionSystem,
-            model: DQN,
-            battery_capacity_kw: int = 10,
-            battery_min_percentage: int = 10,
-
-    ):
-        super().__init__(client, plant_id, battery_id, production_forecaster, model, battery_capacity_kw,
-                         battery_min_percentage)
-        self.shared_active_ref = shared_active_ref
-        self.shared_result_ref = shared_result_ref
-
-    def get_active(self):
-        active = self.shared_active_ref[0] if self.shared_active_ref[0] else self.active
-        logging.warning(f"get_active: {active}")
-        return active
-
-    def set_action(self, action):
-        logging.warning(f"set_action: {action}")
-        self.shared_result_ref[0] = action
+        :param battery_mode:
+        """
+        self.last_battery_mode = battery_mode
