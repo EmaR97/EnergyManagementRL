@@ -1,88 +1,138 @@
 import logging
+from functools import wraps
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackContext, MessageHandler, Application, filters, CallbackQueryHandler
+from telegram.ext import (CallbackContext, MessageHandler, Application, filters, CallbackQueryHandler, CommandHandler)
 
 from energymanagementrl.fusion_solar_connector import FusionSolarExceptionExtended
 from energymanagementrl.rl import EnergyManagementSystem
 
-logger = logging.getLogger()
 
+class TelegramBot:
+    def __init__(self, system: EnergyManagementSystem, token: str, allowed_users: list, logger=None):
+        self.system = system
+        self.token = token
+        self.allowed_users = set(allowed_users)  # Use a set for O(1) lookups
+        self.logger = logger or logging.getLogger(__name__)
+        self.app = Application.builder().token(token).build()
+        self._setup_handlers()
 
-def start_bot(system: EnergyManagementSystem, token: str):
+        self.logger.info("TelegramBot initialized.")
+
+    def _setup_handlers(self):
+        handlers = [CommandHandler("start", self.handle_help), CommandHandler("help", self.handle_help),
+                    CommandHandler("get_id", self.handle_get_id),
+                    CommandHandler("set_controller_status", self.handle_set_controller_status),
+                    CommandHandler("get_controller_status", self.handle_get_controller_status),
+                    CommandHandler("get_battery_mode", self.handle_get_battery_mode),
+                    CommandHandler("execute_control", self.handle_execute_control),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_invalid),
+                    CallbackQueryHandler(self.button_callback), ]
+        for handler in handlers:
+            self.app.add_handler(handler)
+
+        self.logger.info("Handlers have been set up.")
+
+    @staticmethod
+    def authorized_only(func):
+        @wraps(func)
+        async def wrapper(self, update: Update, context: CallbackContext, *args, **kwargs):
+            user_id = update.message.from_user.id
+            self.logger.info(f"Authorization check for user {user_id}.")
+            if not self._is_authorized(user_id):
+                self.logger.warning(f"Unauthorized access attempt by user {user_id}.")
+                await update.message.reply_text("Unauthorized access. You are not allowed to use this bot.")
+                return
+            return await func(self, update, context, *args, **kwargs)
+
+        return wrapper
+
+    def _is_authorized(self, user_id: int) -> bool:
+        """Check if the user is authorized."""
+        return user_id in self.allowed_users
+
+    @staticmethod
     async def handle_help(update: Update, context: CallbackContext):
-        help_text = (
-            "Available Commands:\n"
-            "/help - Show this message\n"
-            "/get_controller_status - Get the current controller status\n"
-            "/set_controller_status - Set the controller's active status (choose Active or Inactive)\n"
-            "/get_battery_mode - Get the current battery mode result\n"
-            "/execute_control - Execute control iteration\n"
-        )
+        help_text = ("Available Commands:\n"
+                     "/help - Show this message\n"
+                     "/get_controller_status - Get the current controller status\n"
+                     "/set_controller_status - Set the controller's active status\n"
+                     "/get_battery_mode - Get the current battery mode\n"
+                     "/execute_control - Execute control iteration\n")
         await update.message.reply_text(help_text)
 
-    async def handle_set_controller_status(update: Update, context: CallbackContext):
+    @staticmethod
+    async def handle_get_id(update: Update, context: CallbackContext):
+        user_id = update.message.from_user.id
+        await update.message.reply_text(f"{user_id}")
+        context.bot.logger.info(f"User {user_id} requested their ID.")
+
+    @authorized_only
+    async def handle_set_controller_status(self, update: Update, context: CallbackContext):
+        self.logger.info(f"User {update.message.from_user.id} is setting controller status.")
         keyboard = [[InlineKeyboardButton("Active", callback_data="set_controller_active"),
-                     InlineKeyboardButton("Inactive", callback_data="set_controller_inactive")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("Choose the controller status:", reply_markup=reply_markup)
+                     InlineKeyboardButton("Passive", callback_data="set_controller_passive")]]
+        await update.message.reply_text("Choose the controller status:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    async def handle_get_controller_status(update: Update, context: CallbackContext):
-        await update.message.reply_text(f"Controller Status: {system.get_active()}")
+    @authorized_only
+    async def handle_get_controller_status(self, update: Update, context: CallbackContext):
+        status = "Active" if self.system.get_active() else "Passive"
+        self.logger.info(f"User {update.message.from_user.id} requested controller status: {status}.")
+        await update.message.reply_text(f"Controller Status: {status}")
 
-    async def handle_get_battery_mode(update: Update, context: CallbackContext):
-        await update.message.reply_text(f"Current Battery Mode: {system.get_last_battery_mode()}")
+    @authorized_only
+    async def handle_get_battery_mode(self, update: Update, context: CallbackContext):
+        mode = self.system.get_last_battery_mode()
+        self.logger.info(f"User {update.message.from_user.id} requested battery mode: {mode}.")
+        await update.message.reply_text(f"Current Battery Mode: {mode}")
 
-    async def handle_execute_control(update: Update, context: CallbackContext):
-        # Send acknowledgment message
+    @authorized_only
+    async def handle_execute_control(self, update: Update, context: CallbackContext):
+        user_id = update.message.from_user.id
+        self.logger.info(f"User {user_id} initiated control execution.")
         await update.message.reply_text("Execution started...")
         try:
-            # Execute control logic
-            system.execute_control()
-            # Send the final result
-            await update.message.reply_text(f"Execution control result: {system.get_last_battery_mode()}")
+            await self._execute_control_async()
+            result = self.system.get_last_battery_mode()
+            self.logger.info(f"Execution control completed successfully. Result: {result}.")
+            await update.message.reply_text(f"Execution control result: {result}")
         except FusionSolarExceptionExtended as e:
+            self.logger.error(f"Execution control failed for user {user_id}: {e.code}")
             await update.message.reply_text(f"Execution control failed: {e.code}")
 
-    async def handle_invalid(update: Update, context: CallbackContext):
+    async def _execute_control_async(self):
+        """Execute control asynchronously to avoid blocking."""
+        await self.system.execute_control()
+
+    @authorized_only
+    async def handle_invalid(self, update: Update, context: CallbackContext):
+        user_id = update.message.from_user.id
+        self.logger.warning(f"User {user_id} entered an invalid command.")
         await update.message.reply_text("Invalid command! Use '/help' for a list of commands.")
 
-    # Dictionary to simulate the switch case
-    command_map = {
-        "/start": handle_help,
-        "/help": handle_help,
-        "/set_controller_status": handle_set_controller_status,
-        "/get_battery_mode": handle_get_battery_mode,
-        "/get_controller_status": handle_get_controller_status,
-        "/execute_control": handle_execute_control,
-    }
-
-    async def handle_message(update: Update, context: CallbackContext):
-        message = update.message.text.strip().lower()
-        logger.warning('latest_message:' + message)
-
-        # Get the handler from the command map or default to invalid command handler
-        command_handler = command_map.get(message, handle_invalid)
-
-        # Call the appropriate handler
-        await command_handler(update, context)
-
-    async def button_callback(update: Update, context: CallbackContext):
+    async def button_callback(self, update: Update, context: CallbackContext):
         query = update.callback_query
+        user_id = query.from_user.id
+
+        self.logger.info(f"User {user_id} triggered button callback: {query.data}.")
+
+        if not self._is_authorized(user_id):
+            self.logger.warning(f"Unauthorized user {user_id} attempted to use a button callback.")
+            await query.answer("Unauthorized access!", show_alert=True)
+            return
+
         await query.answer()
 
         if query.data == "set_controller_active":
-            system.set_active(True)
+            self.system.set_active(True)
+            self.logger.info(f"User {user_id} set controller status to Active.")
             await query.edit_message_text("Controller status set to Active!")
-        elif query.data == "set_controller_inactive":
-            system.set_active(False)
-            await query.edit_message_text("Controller status set to Inactive!")
+        elif query.data == "set_controller_passive":
+            self.system.set_active(False)
+            self.logger.info(f"User {user_id} set controller status to Passive.")
+            await query.edit_message_text("Controller status set to Passive!")
 
-    # Initialize the Telegram bot
-    app = Application.builder().token(token).build()
-    app.add_handler(MessageHandler(filters.COMMAND, handle_message))  # Use filters.COMMAND to capture commands
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_invalid)  # Filter out commands, accept general text
-    )
-    app.add_handler(CallbackQueryHandler(button_callback))
-    app.run_polling()
+    def run(self):
+        self.logger.info("Bot is starting...")
+        self.app.run_polling()
+        self.logger.info("Bot has stopped.")
