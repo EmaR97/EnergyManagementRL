@@ -1,6 +1,7 @@
 import logging
 from functools import wraps
 
+from telegram import BotCommand
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (CallbackContext, MessageHandler, Application, filters, CallbackQueryHandler, CommandHandler)
 
@@ -68,6 +69,20 @@ class TelegramBot:
     def _is_authorized(self, user_id: int) -> bool:
         """Check if the user is authorized."""
         return user_id in self.allowed_users
+
+    async def set_bot_commands(self):
+        self.logger.info("Setting bot commands...")
+        commands = [
+            BotCommand("help", "Show available commands"),
+            BotCommand("get_controller_status", "Get the current controller status"),
+            BotCommand("set_controller_status", "Set the controller's active status"),
+            BotCommand("get_battery_mode", "Get the current battery mode"),
+            BotCommand("get_battery_mode_direct", "Get the real battery mode"),
+            BotCommand("set_battery_mode_direct", "Manually set the battery mode"),
+            BotCommand("execute_control", "Execute control iteration"),
+        ]
+        await self.app.bot.set_my_commands(commands)
+        self.logger.info("Bot commands set!")
 
     @staticmethod
     async def handle_help(update: Update, context: CallbackContext):
