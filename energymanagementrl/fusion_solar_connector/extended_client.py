@@ -17,6 +17,9 @@ class FusionSolarExceptionExtended(FusionSolarException):
         super().__init__(message)
         self.code = code if code is not None else FusionSolarExceptionExtended.ErrorCode.GENERIC
 
+class BatteryWorkingMode(Enum):
+    MAXIMUM_SELF_CONSUMPTION = 2
+    FULLY_FEED_TO_GRID = 4
 
 class FusionSolarClientExtended(FusionSolarClient):
     """Extension of FusionSolarClient with additional functionality."""
@@ -35,15 +38,13 @@ class FusionSolarClientExtended(FusionSolarClient):
                 sleep(backoff_factor)
         raise RuntimeError("keep_alive failed after multiple attempts.")
 
-    class BatteryWorkingMode(Enum):
-        MAXIMUM_SELF_CONSUMPTION = 2
-        FULLY_FEED_TO_GRID = 4
+
 
     @logged_in
     def set_battery_working_mode(self, battery_id, mode: BatteryWorkingMode):
-        if not isinstance(mode, self.BatteryWorkingMode):
+        if not isinstance(mode, BatteryWorkingMode):
             raise ValueError(
-                f"Invalid mode: {mode}. Expected one of {[e.name for e in self.BatteryWorkingMode]}"
+                f"Invalid mode: {mode}. Expected one of {[e.name for e in BatteryWorkingMode]}"
             )
 
         url = f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/device/v1/deviceExt/set-config-signals"

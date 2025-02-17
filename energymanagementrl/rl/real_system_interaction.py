@@ -36,8 +36,8 @@ class EnergyManagementSystem:
     """
 
     def __init__(self, client: FusionSolarClientParsed, plant_id: str, battery_id: str,
-            production_forecaster: EnergyPredictionSystem, model: DQN, battery_capacity_kw: int = 10,
-            battery_min_percentage: int = 10):
+                 production_forecaster: EnergyPredictionSystem, model: DQN, battery_capacity_kw: int = 10,
+                 battery_min_percentage: int = 10):
         self.client: FusionSolarClientParsed = client
         self.plant_id: str = plant_id
         self.battery_id: str = battery_id
@@ -59,8 +59,10 @@ class EnergyManagementSystem:
         """Retrieve and process historical load data."""
         now = datetime.now()
         history = pd.concat([self.client.get_plant_stats_parsed(self.plant_id,
-            query_time=self.client._get_day_start_sec() + i * self.client.MILLISECONDS_IN_A_DAY, time_zone=2,
-            time_zone_str='Europe/Rome') for i in [-2, -1, 0]]).usePower
+                                                                query_time=self.client._get_day_start_sec() + i * self.client.MILLISECONDS_IN_A_DAY,
+                                                                time_zone=2,
+                                                                time_zone_str='Europe/Rome') for i in
+                             [-2, -1, 0]]).usePower
 
         history = history[history.index <= now][-288 * 2:].replace('--', np.nan)
         history = history.astype('float')
@@ -126,7 +128,7 @@ class EnergyManagementSystem:
         prod_kwh_next_2day, residual_kwh_next_2day = self.compute_production_residual()
 
         return self._build_system_state(prod_kwh, load_kwh, charge_kwh, grid_kwh, stored_kwh, load_kwh_last_2day,
-            prod_kwh_next_2day, residual_kwh_next_2day)
+                                        prod_kwh_next_2day, residual_kwh_next_2day)
 
     def execute_control(self):
         """Execute a control decision using the RL model."""
@@ -135,12 +137,12 @@ class EnergyManagementSystem:
 
         if len(obs) != 55:
             raise FusionSolarExceptionExtended("Invalid observation length",
-                FusionSolarExceptionExtended.ErrorCode.PARSING)
+                                               FusionSolarExceptionExtended.ErrorCode.PARSING)
 
         action, _ = self.model.predict(obs)
 
         battery_mode = (
-            FusionSolarClientParsed.BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION if action == 1 else FusionSolarClientParsed.BatteryWorkingMode.FULLY_FEED_TO_GRID)
+            BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION if action == 1 else BatteryWorkingMode.FULLY_FEED_TO_GRID)
 
         if self.get_active():
             current_state = self.get_real_battery_mode()
@@ -157,7 +159,7 @@ class EnergyManagementSystem:
             logging.error(e)
             raise FusionSolarExceptionExtended('', FusionSolarExceptionExtended.ErrorCode.PARSING)
         current_state = (
-            FusionSolarClientParsed.BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION if current_mode == 4 else FusionSolarClientParsed.BatteryWorkingMode.FULLY_FEED_TO_GRID)
+            BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION if current_mode == 4 else BatteryWorkingMode.FULLY_FEED_TO_GRID)
 
         return current_state
 
@@ -203,7 +205,7 @@ class EnergyManagementSystem:
         for attempt in range(retry_attempts):
             try:
                 self.client.set_battery_working_mode(self.battery_id,
-                    FusionSolarClientParsed.BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION)
+                                                     BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION)
                 logging.warning("Battery mode reset")
                 break
             except (FusionSolarExceptionExtended, RemoteDisconnected, ConnectionError) as e:

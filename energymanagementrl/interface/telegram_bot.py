@@ -1,12 +1,12 @@
 import logging
 from functools import wraps
 
-from telegram import BotCommand
+from telegram import BotCommand, CallbackQuery
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import Conflict
 from telegram.ext import (CallbackContext, MessageHandler, Application, filters, CallbackQueryHandler, CommandHandler)
 
-from energymanagementrl.fusion_solar_connector import FusionSolarExceptionExtended
+from energymanagementrl.fusion_solar_connector import FusionSolarExceptionExtended, BatteryWorkingMode
 from energymanagementrl.rl import EnergyManagementSystem
 
 
@@ -37,16 +37,19 @@ class TelegramBot:
         self.logger.info("TelegramBot initialized.")
 
     def _setup_handlers(self):
-        handlers = [CommandHandler("start", self.handle_help), CommandHandler("help", self.handle_help),
-                    CommandHandler("get_id", self.handle_get_id),
-                    CommandHandler("set_controller_status", self.handle_set_controller_status),
-                    CommandHandler("get_controller_status", self.handle_get_controller_status),
-                    CommandHandler("get_battery_mode", self.handle_get_battery_mode),
-                    CommandHandler("get_battery_mode_direct", self.handle_get_battery_mode_direct),
-                    CommandHandler("set_battery_mode_direct", self.handle_set_battery_mode_direct),
-                    CommandHandler("execute_control", self.handle_execute_control),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_invalid),
-                    CallbackQueryHandler(self.button_callback), ]
+        handlers = [
+            CommandHandler("start", self.handle_help),
+            CommandHandler("help", self.handle_help),
+            CommandHandler("get_id", self.handle_get_id),
+            CommandHandler("set_controller_status", self.handle_set_controller_status),
+            CommandHandler("get_controller_status", self.handle_get_controller_status),
+            CommandHandler("get_battery_mode", self.handle_get_battery_mode),
+            CommandHandler("get_battery_mode_direct", self.handle_get_battery_mode_direct),
+            CommandHandler("set_battery_mode_direct", self.handle_set_battery_mode_direct),
+            CommandHandler("execute_control", self.handle_execute_control),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_invalid),
+            CallbackQueryHandler(self.button_callback),
+        ]
         for handler in handlers:
             self.app.add_handler(handler)
         # Register error handler
@@ -93,16 +96,22 @@ class TelegramBot:
         await self.app.bot.set_my_commands(commands)
         self.logger.info("Bot commands set!")
 
+
     @staticmethod
     async def handle_help(update: Update, context: CallbackContext):
-        help_text = ("Available Commands:\n"
-                     "/help - Show this message\n"
-                     "/get_controller_status - Get the current controller status\n"
-                     "/set_controller_status - Set the controller's active status\n"
-                     "/get_battery_mode - Get the current battery mode\n"
-                     "/get_battery_mode_direct - Get the real battery mode\n"
-                     "/set_battery_mode_direct - set the battery mode manually\n"
-                     "/execute_control - Execute control iteration\n")
+        help_text = (
+            """
+            Available Commands:
+            
+            /help - Show this message
+            /get_controller_status - Get the current controller status
+            /set_controller_status - Set the controller's active status
+            /get_battery_mode - Get the current battery mode
+            /get_battery_mode_direct - Get the real battery mode
+            /set_battery_mode_direct - set the battery mode manually
+            /execute_control - Execute control iteration
+            """
+        )
         await update.message.reply_text(help_text)
 
     @staticmethod
@@ -177,16 +186,11 @@ class TelegramBot:
         if not await self._handle_unauthorized_access(query, user_id):
             return
 
-        system = self.system
-        system_client = system.client
-
         actions = {
             "set_controller_active": lambda: self._set_controller_state(query, user_id, True),
             "set_controller_passive": lambda: self._set_controller_state(query, user_id, False),
-            "set_fftg": lambda: self._set_battery_mode(query, user_id,
-                                                       system_client.BatteryWorkingMode.FULLY_FEED_TO_GRID),
-            "set_msf": lambda: self._set_battery_mode(query, user_id,
-                                                      system_client.BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION),
+            "set_fftg": lambda: self._set_battery_mode(query, user_id, BatteryWorkingMode.FULLY_FEED_TO_GRID),
+            "set_msf": lambda: self._set_battery_mode(query, user_id, BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION),
         }
 
         if action in actions:
@@ -196,7 +200,7 @@ class TelegramBot:
             await query.answer("Unknown command!", show_alert=True)
 
     # Helper method for unauthorized access handling
-    async def _handle_unauthorized_access(self, query, user_id):
+    async def _handle_unauthorized_access(self, query: CallbackQuery, user_id: int):
         if not self._is_authorized(user_id):
             self.logger.info(f"Unauthorized user {user_id} attempted to use a button callback.")
             await query.answer("Unauthorized access!", show_alert=True)
@@ -205,14 +209,14 @@ class TelegramBot:
         return True
 
     # Helper method for setting controller state
-    async def _set_controller_state(self, query, user_id, state: bool):
+    async def _set_controller_state(self, query: CallbackQuery, user_id: int, state: bool):
         self.system.set_active(state)
         state_text = "Active" if state else "Passive"
         self.logger.info(f"User {user_id} set controller status to {state_text}.")
         await query.edit_message_text(f"Controller status set to {state_text}!")
 
     # Helper method for setting battery mode
-    async def _set_battery_mode(self, query, user_id, battery_mode):
+    async def _set_battery_mode(self, query: CallbackQuery, user_id: int, battery_mode: BatteryWorkingMode):
         system_client = self.system.client
         self.logger.info(f"User {user_id} is changing battery mode to {battery_mode.name}.")
 

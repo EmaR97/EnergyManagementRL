@@ -1,3 +1,3 @@
-from .extended_client import FusionSolarClientExtended, FusionSolarExceptionExtended
+from .extended_client import FusionSolarClientExtended, FusionSolarExceptionExtended, BatteryWorkingMode
 from .parsed_client import FusionSolarClientParsed
 from .periodic_task import PeriodicTask
