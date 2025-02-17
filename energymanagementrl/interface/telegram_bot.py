@@ -137,16 +137,22 @@ class TelegramBot:
     async def handle_execute_control(self, update: Update, context: CallbackContext):
         user_id = update.message.from_user.id
         self.logger.info(f"User {user_id} initiated control execution.")
-        await update.message.reply_text("Execution started...")
+
+        # Send an initial message and store the bot's response message
+        bot_message = await update.message.reply_text("Execution started...")
+
         try:
             self.system.execute_control()
             result = self.system.get_last_battery_mode()
             self.logger.info(f"Execution control completed successfully. Result: {result}.")
-            await update.message.reply_text(f"Execution control result: {result}")
+
+            # Edit the bot's message with the final result
+            await bot_message.edit_text(f"Execution control result: {result}")
         except FusionSolarExceptionExtended as e:
             self.logger.error(f"Execution control failed for user {user_id}: {e.code}")
-            await update.message.reply_text(f"Execution control failed: {e.code}")
 
+            # Edit the bot's message with the failure message
+            await bot_message.edit_text(f"Execution control failed: {e.code}")
 
     @authorized_only
     async def handle_invalid(self, update: Update, context: CallbackContext):
