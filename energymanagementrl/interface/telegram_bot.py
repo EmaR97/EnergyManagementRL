@@ -3,6 +3,7 @@ from functools import wraps
 
 from telegram import BotCommand
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import Conflict
 from telegram.ext import (CallbackContext, MessageHandler, Application, filters, CallbackQueryHandler, CommandHandler)
 
 from energymanagementrl.fusion_solar_connector import FusionSolarExceptionExtended
@@ -33,7 +34,6 @@ class TelegramBot:
         self.logger = logger or get_logger("_info")
         self.app = Application.builder().token(token).build()
         self._setup_handlers()
-
         self.logger.info("TelegramBot initialized.")
 
     def _setup_handlers(self):
@@ -49,8 +49,17 @@ class TelegramBot:
                     CallbackQueryHandler(self.button_callback), ]
         for handler in handlers:
             self.app.add_handler(handler)
+        # Register error handler
+        self.app.add_error_handler(self.error_handler)
 
         self.logger.info("Handlers have been set up.")
+
+    async def error_handler(self, update: object, context: CallbackContext) -> None:
+        """Handles errors raised by the application."""
+        if isinstance(context.error, Conflict):
+            self.logger.warning("Bot instance conflict detected. Ignoring...")
+        else:
+            self.logger.exception(f"Unhandled error: {context.error}")
 
     @staticmethod
     def authorized_only(func):
