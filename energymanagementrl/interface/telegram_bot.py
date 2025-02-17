@@ -36,27 +36,6 @@ class TelegramBot:
         self._setup_handlers()
         self.logger.info("TelegramBot initialized.")
 
-    def _setup_handlers(self):
-        handlers = [
-            CommandHandler("start", self.handle_help),
-            CommandHandler("help", self.handle_help),
-            CommandHandler("get_id", self.handle_get_id),
-            CommandHandler("set_controller_status", self.handle_set_controller_status),
-            CommandHandler("get_controller_status", self.handle_get_controller_status),
-            CommandHandler("get_battery_mode", self.handle_get_battery_mode),
-            CommandHandler("get_battery_mode_direct", self.handle_get_battery_mode_direct),
-            CommandHandler("set_battery_mode_direct", self.handle_set_battery_mode_direct),
-            CommandHandler("execute_control", self.handle_execute_control),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_invalid),
-            CallbackQueryHandler(self.button_callback),
-        ]
-        for handler in handlers:
-            self.app.add_handler(handler)
-        # Register error handler
-        self.app.add_error_handler(self.error_handler)
-
-        self.logger.info("Handlers have been set up.")
-
     async def error_handler(self, update: object, context: CallbackContext) -> None:
         """Handles errors raised by the application."""
         if isinstance(context.error, Conflict):
@@ -82,36 +61,38 @@ class TelegramBot:
         """Check if the user is authorized."""
         return user_id in self.allowed_users
 
+    COMMANDS = [
+        ("help", "Show available commands"),
+        ("get_controller_status", "Get the current controller status"),
+        ("set_controller_status", "Set the controller's active status"),
+        ("get_battery_mode", "Get the current battery mode"),
+        ("get_battery_mode_direct", "Get the real battery mode"),
+        ("set_battery_mode_direct", "Manually set the battery mode"),
+        ("execute_control", "Execute control iteration"),
+    ]
+
     async def set_bot_commands(self):
         self.logger.info("Setting bot commands...")
-        commands = [
-            BotCommand("help", "Show available commands"),
-            BotCommand("get_controller_status", "Get the current controller status"),
-            BotCommand("set_controller_status", "Set the controller's active status"),
-            BotCommand("get_battery_mode", "Get the current battery mode"),
-            BotCommand("get_battery_mode_direct", "Get the real battery mode"),
-            BotCommand("set_battery_mode_direct", "Manually set the battery mode"),
-            BotCommand("execute_control", "Execute control iteration"),
-        ]
+        commands = [BotCommand(cmd, desc) for cmd, desc in self.COMMANDS]
         await self.app.bot.set_my_commands(commands)
         self.logger.info("Bot commands set!")
 
+    def _setup_handlers(self):
+        command_handlers = [
+            CommandHandler(cmd, getattr(self, f"handle_{cmd}")) for cmd, _ in self.COMMANDS
+        ]
 
-    @staticmethod
-    async def handle_help(update: Update, context: CallbackContext):
-        help_text = (
-            """
-            Available Commands:
-            
-            /help - Show this message
-            /get_controller_status - Get the current controller status
-            /set_controller_status - Set the controller's active status
-            /get_battery_mode - Get the current battery mode
-            /get_battery_mode_direct - Get the real battery mode
-            /set_battery_mode_direct - set the battery mode manually
-            /execute_control - Execute control iteration
-            """
-        )
+        for handler in command_handlers:
+            self.app.add_handler(handler)
+
+        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_invalid))
+        self.app.add_handler(CallbackQueryHandler(self.button_callback))
+
+        self.app.add_error_handler(self.error_handler)
+        self.logger.info("Handlers have been set up.")
+
+    async def handle_help(self, update: Update, context: CallbackContext):
+        help_text = "Available Commands:\n\n" + "\n".join(f"/{cmd} - {desc}" for cmd, desc in self.COMMANDS)
         await update.message.reply_text(help_text)
 
     @staticmethod
