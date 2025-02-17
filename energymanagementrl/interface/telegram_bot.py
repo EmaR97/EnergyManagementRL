@@ -139,7 +139,7 @@ class TelegramBot:
         self.logger.info(f"User {user_id} initiated control execution.")
         await update.message.reply_text("Execution started...")
         try:
-            await self._execute_control_async()
+            self.system.execute_control()
             result = self.system.get_last_battery_mode()
             self.logger.info(f"Execution control completed successfully. Result: {result}.")
             await update.message.reply_text(f"Execution control result: {result}")
@@ -147,9 +147,6 @@ class TelegramBot:
             self.logger.error(f"Execution control failed for user {user_id}: {e.code}")
             await update.message.reply_text(f"Execution control failed: {e.code}")
 
-    async def _execute_control_async(self):
-        """Execute control asynchronously to avoid blocking."""
-        await self.system.execute_control()
 
     @authorized_only
     async def handle_invalid(self, update: Update, context: CallbackContext):
