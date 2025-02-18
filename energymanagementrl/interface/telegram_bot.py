@@ -20,7 +20,7 @@ class TelegramBot:
         self._setup_handlers()
         self.logger.info("TelegramBot initialized.")
 
-    async def error_handler(self, update: object, context: CallbackContext) -> None:
+    async def _error_handler(self, update: object, context: CallbackContext) -> None:
         """Handles errors raised by the application."""
         if isinstance(context.error, Conflict):
             self.logger.warning("Bot instance conflict detected. Ignoring...")
@@ -46,10 +46,11 @@ class TelegramBot:
         return user_id in self.allowed_users
 
     COMMANDS = [("help", "Show available commands"), ("get_controller_status", "Get the current controller status"),
-        ("set_controller_status", "Set the controller's active status"),
-        ("get_battery_mode", "Get the current battery mode"), ("get_battery_mode_direct", "Get the real battery mode"),
-        ("set_battery_mode_direct", "Manually set the battery mode"),
-        ("execute_control", "Execute control iteration"), ]
+                ("set_controller_status", "Set the controller's active status"),
+                ("get_battery_mode", "Get the current battery mode"),
+                ("get_battery_mode_direct", "Get the real battery mode"),
+                ("set_battery_mode_direct", "Manually set the battery mode"),
+                ("execute_control", "Execute control iteration"), ]
 
     async def set_bot_commands(self):
         self.logger.info("Setting bot commands...")
@@ -68,10 +69,12 @@ class TelegramBot:
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_invalid))
         self.app.add_handler(CallbackQueryHandler(self.button_callback))
 
-        self.app.add_error_handler(self.error_handler)
+        self.app.add_error_handler(self._error_handler)
         self.logger.info("Handlers have been set up.")
 
+    @authorized_only
     async def handle_help(self, update: Update, context: CallbackContext):
+        self.logger.info(f"User {update.message.from_user.id} requested command description")
         help_text = "Available Commands:\n\n" + "\n".join(f"/{cmd} - {desc}" for cmd, desc in self.COMMANDS)
         await update.message.reply_text(help_text)
 
@@ -164,7 +167,6 @@ class TelegramBot:
             self.logger.warning(f"User {user_id} sent an unknown action: {action}.")
             await query.answer("Unknown command!", show_alert=True)
 
-    # Helper method for unauthorized access handling
     async def _handle_unauthorized_access(self, query: CallbackQuery, user_id: int):
         if not self._is_authorized(user_id):
             self.logger.info(f"Unauthorized user {user_id} attempted to use a button callback.")
@@ -173,14 +175,12 @@ class TelegramBot:
         await query.answer()
         return True
 
-    # Helper method for setting controller state
     async def _set_controller_state(self, query: CallbackQuery, user_id: int, state: bool):
         self.system.set_active(state)
         state_text = "Active" if state else "Passive"
         self.logger.info(f"User {user_id} set controller status to {state_text}.")
         await query.edit_message_text(f"Controller status set to {state_text}!")
 
-    # Helper method for setting battery mode
     async def _set_battery_mode(self, query: CallbackQuery, user_id: int, battery_mode: BatteryWorkingMode):
         system_client = self.system.client
         self.logger.info(f"User {user_id} is changing battery mode to {battery_mode.name}.")
