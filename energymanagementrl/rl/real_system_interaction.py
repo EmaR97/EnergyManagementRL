@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import timedelta, datetime
 from http.client import RemoteDisconnected
 from time import sleep
@@ -33,7 +34,7 @@ class EnergyManagementSystem:
     def __init__(self, client: FusionSolarClientParsed, plant_id: str, battery_id: str,
                  production_forecaster: EnergyPredictionSystem, model: DQN, battery_capacity_kw: int = 10,
                  battery_min_percentage: int = 10):
-        self.logger = get_logger("EMS")
+        self.logger = get_logger("EMS", logging.WARNING)
         self.client: FusionSolarClientParsed = client
         self.plant_id: str = plant_id
         self.battery_id: str = battery_id
