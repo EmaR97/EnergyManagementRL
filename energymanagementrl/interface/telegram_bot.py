@@ -196,5 +196,5 @@ class TelegramBot:
 
     async def run(self):
         self.logger.info("Bot is starting...")
-        self.app.run_polling()
+        self.app.run_polling(close_loop=False)
         self.logger.info("Bot has stopped.")
