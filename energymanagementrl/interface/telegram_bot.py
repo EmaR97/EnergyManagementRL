@@ -45,15 +45,11 @@ class TelegramBot:
         """Check if the user is authorized."""
         return user_id in self.allowed_users
 
-    COMMANDS = [
-        ("help", "Show available commands"),
-        ("get_controller_status", "Get the current controller status"),
+    COMMANDS = [("help", "Show available commands"), ("get_controller_status", "Get the current controller status"),
         ("set_controller_status", "Set the controller's active status"),
-        ("get_battery_mode", "Get the current battery mode"),
-        ("get_battery_mode_direct", "Get the real battery mode"),
+        ("get_battery_mode", "Get the current battery mode"), ("get_battery_mode_direct", "Get the real battery mode"),
         ("set_battery_mode_direct", "Manually set the battery mode"),
-        ("execute_control", "Execute control iteration"),
-    ]
+        ("execute_control", "Execute control iteration"), ]
 
     async def set_bot_commands(self):
         self.logger.info("Setting bot commands...")
@@ -62,9 +58,7 @@ class TelegramBot:
         self.logger.info("Bot commands set!")
 
     def _setup_handlers(self):
-        command_handlers = [
-            CommandHandler(cmd, getattr(self, f"handle_{cmd}")) for cmd, _ in self.COMMANDS
-        ]
+        command_handlers = [CommandHandler(cmd, getattr(self, f"handle_{cmd}")) for cmd, _ in self.COMMANDS]
 
         for handler in command_handlers:
             self.app.add_handler(handler)
@@ -115,30 +109,31 @@ class TelegramBot:
 
     @authorized_only
     async def handle_get_battery_mode_direct(self, update: Update, context: CallbackContext):
-        mode = self.system.get_real_battery_mode().name
-        self.logger.info(f"User {update.message.from_user.id} requested real battery mode: {mode}.")
-        await update.message.reply_text(f"Real Current Battery Mode: {mode}")
+        try:
+            mode = self.system.get_last_battery_mode()
+            self.logger.info(f"User {update.message.from_user.id} requested real battery mode: {mode}.")
+            await update.message.reply_text(f"Real Current Battery Mode: {mode}")
+        except FusionSolarExceptionExtended as e:
+            self.logger.error(f"Error getting Real Current Battery Mod {update.message.from_user.id}: {e.code}")
+            await update.message.reply_text(f"Error getting Real Current Battery Mod: {e.code}")
 
     @authorized_only
     async def handle_execute_control(self, update: Update, context: CallbackContext):
         user_id = update.message.from_user.id
         self.logger.info(f"User {user_id} initiated control execution.")
 
-        # Send an initial message and store the bot's response message
         bot_message = await update.message.reply_text("Execution started...")
 
         try:
             self.system.execute_control()
-            result = self.system.get_last_battery_mode()
-            self.logger.info(f"Execution control completed successfully. Result: {result}.")
-
-            # Edit the bot's message with the final result
-            await bot_message.edit_text(f"Execution control result: {result}")
+            self.logger.info(f"Execution control completed successfully. ")
+            await bot_message.edit_text(f"Execution control completed successfully. Waiting results...")
         except FusionSolarExceptionExtended as e:
             self.logger.error(f"Execution control failed for user {user_id}: {e.code}")
-
-            # Edit the bot's message with the failure message
             await bot_message.edit_text(f"Execution control failed: {e.code}")
+            return
+        await self.handle_get_battery_mode_direct(update, context)
+        await bot_message.edit_text(f"Execution control completed successfully.")
 
     @authorized_only
     async def handle_invalid(self, update: Update, context: CallbackContext):
