@@ -216,6 +216,6 @@ class TelegramBot:
             await query.edit_message_text(f"Failed to set battery mode: {e.code}")
 
     async def run(self):
-        self.logger.info("Bot is starting...")
+        self.logger.warning("Bot is starting...")
         self.app.run_polling()
-        self.logger.info("Bot has stopped.")
+        self.logger.warning("Bot has stopped.")
