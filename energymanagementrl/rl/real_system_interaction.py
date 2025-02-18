@@ -33,7 +33,7 @@ class EnergyManagementSystem:
     def __init__(self, client: FusionSolarClientParsed, plant_id: str, battery_id: str,
                  production_forecaster: EnergyPredictionSystem, model: DQN, battery_capacity_kw: int = 10,
                  battery_min_percentage: int = 10):
-        self.logger = get_logger("_info")
+        self.logger = get_logger("EMS")
         self.client: FusionSolarClientParsed = client
         self.plant_id: str = plant_id
         self.battery_id: str = battery_id
