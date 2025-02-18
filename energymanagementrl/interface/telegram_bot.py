@@ -85,6 +85,8 @@ class TelegramBot:
         for handler in command_handlers:
             self.app.add_handler(handler)
 
+        self.app.add_handler(CommandHandler('start', self.handle_help))
+
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_invalid))
         self.app.add_handler(CallbackQueryHandler(self.button_callback))
 
@@ -213,7 +215,7 @@ class TelegramBot:
             self.logger.error(f"Failed to set battery mode for user {user_id}: {e.code}")
             await query.edit_message_text(f"Failed to set battery mode: {e.code}")
 
-    def run(self):
+    async def run(self):
         self.logger.info("Bot is starting...")
         self.app.run_polling()
         self.logger.info("Bot has stopped.")

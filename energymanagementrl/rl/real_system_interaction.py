@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import timedelta, datetime
 from http.client import RemoteDisconnected
@@ -13,12 +14,6 @@ from energymanagementrl.fusion_solar_connector import *
 from energymanagementrl.production_forecast import *
 from energymanagementrl.rl import extract_values_gen
 from energymanagementrl.simulation import sparse_matrix
-
-
-def _is_scheduled_stop() -> bool:
-    """Check if the current time falls within the scheduled stop period."""
-    now = datetime.now()
-    return now.hour in (11, 23) and now.minute >= 55
 
 
 class EnergyManagementSystem:
@@ -47,6 +42,7 @@ class EnergyManagementSystem:
         self.battery_min_percentage = battery_min_percentage
         self.active = False
         self.last_battery_mode = None
+        self._stop_control_loop = False
 
     def get_flow_and_energy(self):
         """Retrieve and calculate energy flow data from the plant."""
@@ -163,28 +159,27 @@ class EnergyManagementSystem:
 
         return current_state
 
-    def control_loop(self, retry_delay: int = 10, retry_attempts: int = 10):
+    async def control_loop(self, retry_delay: int = 10, retry_attempts: int = 10):
         """Run the control loop at 5-minute intervals."""
+        self._stop_control_loop = False
         try:
-            while True:
-                if _is_scheduled_stop():
-                    logging.info("Control loop stopping at scheduled time.")
-                    break
-
-                self._run_control_cycle(retry_delay)
-
+            while not self._stop_control_loop:
+                await self._run_control_cycle(retry_delay)
         finally:
             logging.warning("Control loop terminated")
             if self.get_active():
                 self._reset_battery_mode(retry_delay, retry_attempts)
 
-    def _run_control_cycle(self, retry_delay: int):
+    def stop_control_loop(self):
+        self._stop_control_loop = True
+
+    async def _run_control_cycle(self, retry_delay: int):
         """Execute a single control cycle."""
         try:
             state, action = self.execute_control()
         except (FusionSolarExceptionExtended, RemoteDisconnected, ConnectionError) as e:
             logging.error(f"Error: {getattr(e, 'code', str(e))}")
-            sleep(retry_delay)
+            await asyncio.sleep(retry_delay)
             return
         except FusionSolarException as e:
             if not e.args or e.args[0] != "Failed to reset session and login again.":
@@ -198,7 +193,7 @@ class EnergyManagementSystem:
 
         next_time = (now + timedelta(minutes=5 - now.minute % 5)).replace(second=30, microsecond=0)
         sleep_duration = (next_time - now).total_seconds()
-        sleep(sleep_duration)
+        await asyncio.sleep(sleep_duration)
 
     def _reset_battery_mode(self, retry_delay: int, retry_attempts: int):
         """Reset the battery mode with retries."""
