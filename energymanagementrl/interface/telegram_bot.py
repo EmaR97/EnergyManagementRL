@@ -1,4 +1,3 @@
-import logging
 from functools import wraps
 
 from telegram import BotCommand, CallbackQuery
@@ -8,22 +7,7 @@ from telegram.ext import (CallbackContext, MessageHandler, Application, filters,
 
 from energymanagementrl.fusion_solar_connector import FusionSolarExceptionExtended, BatteryWorkingMode
 from energymanagementrl.rl import EnergyManagementSystem
-
-
-def get_logger(name: str):
-    info_logger = logging.getLogger(f"{__name__}" + name)  # Unique logger name
-    info_logger.setLevel(logging.INFO)  # Capture INFO and above
-
-    # Ensure handler is added only once
-    if not info_logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setLevel(logging.INFO)  # Ensure it logs INFO and above
-
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        info_logger.addHandler(handler)
-
-    return info_logger
+from energymanagementrl.utility import get_logger
 
 
 class TelegramBot:
@@ -216,6 +200,6 @@ class TelegramBot:
             await query.edit_message_text(f"Failed to set battery mode: {e.code}")
 
     async def run(self):
-        self.logger.warning("Bot is starting...")
+        self.logger.info("Bot is starting...")
         self.app.run_polling()
-        self.logger.warning("Bot has stopped.")
+        self.logger.info("Bot has stopped.")

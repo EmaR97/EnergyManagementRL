@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from datetime import timedelta, datetime
 from http.client import RemoteDisconnected
 from time import sleep
@@ -14,6 +13,7 @@ from energymanagementrl.fusion_solar_connector import *
 from energymanagementrl.production_forecast import *
 from energymanagementrl.rl import extract_values_gen
 from energymanagementrl.simulation import sparse_matrix
+from energymanagementrl.utility import get_logger
 
 
 class EnergyManagementSystem:
@@ -33,6 +33,7 @@ class EnergyManagementSystem:
     def __init__(self, client: FusionSolarClientParsed, plant_id: str, battery_id: str,
                  production_forecaster: EnergyPredictionSystem, model: DQN, battery_capacity_kw: int = 10,
                  battery_min_percentage: int = 10):
+        self.logger = get_logger("_info")
         self.client: FusionSolarClientParsed = client
         self.plant_id: str = plant_id
         self.battery_id: str = battery_id
@@ -64,7 +65,7 @@ class EnergyManagementSystem:
         history = history.astype('float')
 
         if history.isnull().values.any():
-            logging.warning("Missing values in history data. Filling with mean.")
+            self.logger.warning("Missing values in history data. Filling with mean.")
             history.fillna(history.mean(), inplace=True)
 
         load_kwh_last_2day = history.resample('4h').mean()[1:] / 12
@@ -144,7 +145,7 @@ class EnergyManagementSystem:
             current_state = self.get_real_battery_mode()
             if battery_mode.value != current_state:
                 self.client.set_battery_working_mode(self.battery_id, battery_mode)
-        logging.warning(f"Battery Mode: {battery_mode.name}")
+        self.logger.warning(f"Battery Mode: {battery_mode.name}")
         self.set_last_battery_mode(battery_mode.name)
         return state, action
 
@@ -152,7 +153,7 @@ class EnergyManagementSystem:
         try:
             current_mode = int(self.client.get_battery_status(self.battery_id)[1]['realValue'])
         except ValueError as e:
-            logging.error(e)
+            self.logger.error(e)
             raise FusionSolarExceptionExtended('', FusionSolarExceptionExtended.ErrorCode.PARSING)
         current_state = (
             BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION if current_mode == 4 else BatteryWorkingMode.FULLY_FEED_TO_GRID)
@@ -162,11 +163,12 @@ class EnergyManagementSystem:
     async def control_loop(self, retry_delay: int = 10, retry_attempts: int = 10):
         """Run the control loop at 5-minute intervals."""
         self._stop_control_loop = False
+        self.logger.info("Starting Control loop")
         try:
             while not self._stop_control_loop:
                 await self._run_control_cycle(retry_delay)
         finally:
-            logging.warning("Control loop terminated")
+            self.logger.info("Control loop terminated")
             if self.get_active():
                 self._reset_battery_mode(retry_delay, retry_attempts)
 
@@ -178,18 +180,18 @@ class EnergyManagementSystem:
         try:
             state, action = self.execute_control()
         except (FusionSolarExceptionExtended, RemoteDisconnected, ConnectionError) as e:
-            logging.error(f"Error: {getattr(e, 'code', str(e))}")
+            self.logger.error(f"Error: {getattr(e, 'code', str(e))}")
             await asyncio.sleep(retry_delay)
             return
         except FusionSolarException as e:
             if not e.args or e.args[0] != "Failed to reset session and login again.":
                 raise e
-            logging.warning(f"Resetting session")
+            self.logger.warning(f"Resetting session")
             self.client._configure_session()
             return
         now = datetime.now()
         state.update({'timestamp': now.timestamp(), 'action': int(action)})
-        logging.info(f"State: {state}")
+        self.logger.info(f"State: {state}")
 
         next_time = (now + timedelta(minutes=5 - now.minute % 5)).replace(second=30, microsecond=0)
         sleep_duration = (next_time - now).total_seconds()
@@ -201,13 +203,13 @@ class EnergyManagementSystem:
             try:
                 self.client.set_battery_working_mode(self.battery_id,
                                                      BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION)
-                logging.warning("Battery mode reset")
+                self.logger.warning("Battery mode reset")
                 break
             except (FusionSolarExceptionExtended, RemoteDisconnected, ConnectionError) as e:
-                logging.error(f"Attempt-{attempt} failed. Error: {getattr(e, 'code', str(e))}")
+                self.logger.error(f"Attempt-{attempt} failed. Error: {getattr(e, 'code', str(e))}")
                 sleep(retry_delay)
             except Exception as e:
-                logging.critical(f"Unexpected error during battery mode reset: {str(e)}")
+                self.logger.critical(f"Unexpected error during battery mode reset: {str(e)}")
                 break
 
     def set_active(self, is_active: bool):
