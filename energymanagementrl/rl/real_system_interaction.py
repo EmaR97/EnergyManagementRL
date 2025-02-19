@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import timedelta, datetime
+from datetime import timedelta
 from http.client import RemoteDisconnected
 from time import sleep
 
@@ -15,6 +15,10 @@ from energymanagementrl.production_forecast import *
 from energymanagementrl.rl import extract_values_gen
 from energymanagementrl.simulation import sparse_matrix
 from energymanagementrl.utility import get_logger
+
+
+def get_now_utc():
+    return pd.Timestamp.now(tz='UTC').to_pydatetime()
 
 
 class EnergyManagementSystem:
@@ -55,14 +59,14 @@ class EnergyManagementSystem:
 
     def get_history(self):
         """Retrieve and process historical load data."""
-        now = datetime.now()
+
+        now_gmt = np.datetime64(get_now_utc().replace(tzinfo=None))
         history = pd.concat([self.client.get_plant_stats_parsed(self.plant_id,
                                                                 query_time=self.client.get_day_start_sec() + i * self.client.MILLISECONDS_IN_A_DAY,
-                                                                time_zone=2,
-                                                                time_zone_str='Europe/Rome') for i in
+                                                                time_zone=2, time_zone_str='Europe/Rome') for i in
                              [-2, -1, 0]]).usePower
 
-        history = history[history.index <= now][-288 * 2:].replace('--', np.nan)
+        history = history[history.index <= now_gmt][-288 * 2:].replace('--', np.nan)
         history = history.astype('float')
 
         if history.isnull().values.any():
@@ -74,7 +78,7 @@ class EnergyManagementSystem:
 
     def compute_production_residual(self):
         """Compute production residuals based on forecasts."""
-        now_gmt = pd.Timestamp.now(tz='UTC').to_pydatetime()
+        now_gmt = get_now_utc()
         now_gmt_5m = now_gmt.replace(minute=now_gmt.minute // 5 * 5)
         start = now_gmt_5m.strftime('%Y-%m-%d %H:%M')
         end = (now_gmt_5m + timedelta(days=2)).strftime('%Y-%m-%d %H:%M')
@@ -146,8 +150,11 @@ class EnergyManagementSystem:
             current_state = self.get_real_battery_mode()
             if battery_mode.value != current_state:
                 self.client.set_battery_working_mode(self.battery_id, battery_mode)
-        self.logger.warning(f"Battery Mode: {battery_mode.name}")
+        self.logger.warning(f"Setting Battery Mode to: {battery_mode.name}")
         self.set_last_battery_mode(battery_mode.name)
+        now_gmt = get_now_utc()
+        state.update({'timestamp': now_gmt.timestamp(), 'action': int(action)})
+        self.logger.info(f"State: {state}")
         return state, action
 
     def get_real_battery_mode(self):
@@ -179,7 +186,7 @@ class EnergyManagementSystem:
     async def _run_control_cycle(self, retry_delay: int):
         """Execute a single control cycle."""
         try:
-            state, action = self.execute_control()
+            self.execute_control()
         except (FusionSolarExceptionExtended, RemoteDisconnected, ConnectionError) as e:
             self.logger.error(f"Error: {getattr(e, 'code', str(e))}")
             await asyncio.sleep(retry_delay)
@@ -190,20 +197,16 @@ class EnergyManagementSystem:
             self.logger.warning(f"Resetting session")
             self.client.reset_session()
             return
-        now = datetime.now()
-        state.update({'timestamp': now.timestamp(), 'action': int(action)})
-        self.logger.info(f"State: {state}")
-
-        next_time = (now + timedelta(minutes=5 - now.minute % 5)).replace(second=30, microsecond=0)
-        sleep_duration = (next_time - now).total_seconds()
+        now_gmt = get_now_utc()
+        next_time = (now_gmt + timedelta(minutes=5 - now_gmt.minute % 5)).replace(second=30, microsecond=0)
+        sleep_duration = (next_time - now_gmt).total_seconds()
         await asyncio.sleep(sleep_duration)
 
     def _reset_battery_mode(self, retry_delay: int, retry_attempts: int):
         """Reset the battery mode with retries."""
         for attempt in range(retry_attempts):
             try:
-                self.client.set_battery_working_mode(self.battery_id,
-                                                     BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION)
+                self.client.set_battery_working_mode(self.battery_id, BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION)
                 self.logger.warning("Battery mode reset")
                 break
             except (FusionSolarExceptionExtended, RemoteDisconnected, ConnectionError) as e:
