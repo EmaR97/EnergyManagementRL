@@ -52,10 +52,18 @@ class EnergyManagementSystem:
 
     def get_flow_and_energy(self):
         """Retrieve and calculate energy flow data from the plant."""
-        prod_kw, load_kw, charge_kw, grid_kw, soc = self.client.get_plant_flow_parsed(self.plant_id)
+        flow_parsed = self.get_plant_stats()
+        prod_kw = flow_parsed['prod']
+        load_kw = flow_parsed['load']
+        charge_kw = flow_parsed['store']
+        grid_kw = flow_parsed['grid']
+        soc = flow_parsed['soc']
         prod_kwh, load_kwh, charge_kwh, grid_kwh = [i / 12 for i in (prod_kw, -load_kw, charge_kw, grid_kw)]
         stored_kwh = (soc - self.battery_min_percentage) / 100 * self.battery_capacity_kw
         return prod_kwh, load_kwh, charge_kwh, grid_kwh, stored_kwh
+
+    def get_plant_stats(self):
+        return self.client.get_plant_flow_parsed(self.plant_id)
 
     def get_history(self):
         """Retrieve and process historical load data."""
@@ -159,14 +167,10 @@ class EnergyManagementSystem:
 
     def get_real_battery_mode(self):
         try:
-            current_mode = int(self.client.get_battery_status(self.battery_id)[1]['realValue'])
+            return self.get_plant_stats()['battery_mode']
         except ValueError as e:
             self.logger.error(e)
             raise FusionSolarExceptionExtended('', FusionSolarExceptionExtended.ErrorCode.PARSING)
-        current_state = (
-            BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION if current_mode == 4 else BatteryWorkingMode.FULLY_FEED_TO_GRID)
-
-        return current_state
 
     async def control_loop(self, retry_delay: int = 10, retry_attempts: int = 10):
         """Run the control loop at 5-minute intervals."""

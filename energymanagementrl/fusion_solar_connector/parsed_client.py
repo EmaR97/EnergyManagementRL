@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from pandas import DataFrame
 
+from . import BatteryWorkingMode
 from .extended_client import FusionSolarClientExtended, FusionSolarExceptionExtended
 
 
@@ -103,21 +104,9 @@ class FusionSolarClientParsed(FusionSolarClientExtended):
 
         return unformatted_data, final_data
 
-    def get_plant_flow_parsed(self, plant_id: str) -> Tuple[float, float, float, float, float]:
-        """
-        Fetches and processes plant flow data from the client.
-
-        Args:
-            self: The client instance used to fetch plant data.
-            plant_id (str): The ID of the plant.
-
-        Returns:
-            Tuple containing production, load, storage, and grid flow as floats.
-        """
-        # Fetch plant flow data
+    def get_plant_flow_parsed(self, plant_id: str) -> dict:
         flow_data = self.get_plant_flow(plant_id).get('data', {}).get('flow', {})
 
-        # Extract specific elements from flow data
         try:
             grid_data = flow_data['links'][5]
             prod_data = flow_data['nodes'][0]
@@ -131,7 +120,8 @@ class FusionSolarClientParsed(FusionSolarClientExtended):
         string_store = store_data['description']['value'].split()[0]
         string_grid = grid_data['description']['value'].split()[0]
         string_soc = store_data['deviceTips']['SOC']
-        if '--' in (string_prod, string_load, string_store, string_grid, string_soc):
+        string_cmv = store_data['deviceTips']['CHARGE_MODE_VALUE']
+        if '--' in (string_prod, string_load, string_store, string_grid, string_soc, string_cmv):
             raise FusionSolarExceptionExtended(
                 message=f"get_plant_flow_parsed",
                 code=FusionSolarExceptionExtended.ErrorCode.PARSING
@@ -143,8 +133,15 @@ class FusionSolarClientParsed(FusionSolarClientExtended):
         soc = float(string_soc)
         # Adjust store and grid to maintain system balance
         store, grid = get_system_balance(prod, load, store, grid)
+        match string_cmv:
+            case "Maximum self-consumption":
+                battery_mode = BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION
+            case "Fully fed to grid":
+                battery_mode = BatteryWorkingMode.FULLY_FEED_TO_GRID
+            case _:
+                raise ValueError(f"Unexpected battery mode: {string_cmv}")
 
-        return prod, load, store, grid, soc
+        return {"prod": prod, "load": load, "store": store, "grid": grid, "soc": soc, "battery_mode": battery_mode}
 
 
 def get_system_balance(prod, load, store, grid, tolerance=1e-6):
