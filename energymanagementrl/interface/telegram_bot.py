@@ -1,4 +1,3 @@
-import json
 from functools import wraps
 
 from telegram import BotCommand, CallbackQuery
@@ -128,10 +127,10 @@ class TelegramBot:
                 'from_grid': format_kw(stats['grid']),
             }
             # Convert the dictionary to a JSON string for raw format
-            formatted_stats_json = json.dumps(formatted_stats, indent=1)  # Pretty-print the JSON
+            formatted_stats_str = "\n\n".join([f" {key}: {value}" for key, value in formatted_stats.items()])
 
             self.logger.info(f"User {update.message.from_user.id} requested system stats: {formatted_stats}.")
-            await update.message.reply_text(f"System current statistics:\n{formatted_stats_json}")
+            await update.message.reply_text(f"System current statistics:\n\n{formatted_stats_str}")
         except FusionSolarExceptionExtended as e:
             self.logger.error(f"Error getting system current stats {update.message.from_user.id}: {e.code}")
             await update.message.reply_text(f"Error getting system current stats: {e.code}")
