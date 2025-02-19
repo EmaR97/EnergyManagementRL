@@ -2,6 +2,7 @@ from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
+from pandas import DataFrame
 
 from .extended_client import FusionSolarClientExtended, FusionSolarExceptionExtended
 
@@ -10,6 +11,12 @@ class FusionSolarClientParsed(FusionSolarClientExtended):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    def get_day_start_sec(self) -> int:
+        return self._get_day_start_sec()
+
+    def reset_session(self):
+        self._configure_session()
 
     def get_battery_day_stats_parsed(
             self,
@@ -40,7 +47,7 @@ class FusionSolarClientParsed(FusionSolarClientExtended):
             time_zone_str: str = "UTC",
             keys_to_keep=None,
             time_zone_str_convert: str = "UTC",
-    ) -> dict:
+    ) -> DataFrame:
 
         if keys_to_keep is None:
             keys_to_keep = FusionSolarClientParsed.PLANT_STATS_KEYS
@@ -50,11 +57,12 @@ class FusionSolarClientParsed(FusionSolarClientExtended):
         plant_stats_df['timestamp'] = pd.to_datetime(plant_stats_df['xAxis'])
         plant_stats_df = (
             plant_stats_df.set_index('timestamp')
-            .tz_localize(time_zone_str_convert, ambiguous=True, nonexistent='shift_forward')
+            .tz_localize(time_zone_str_convert, ambiguous="infer", nonexistent='shift_forward')
             .tz_convert('UTC')
             .tz_localize(None)
             .drop(columns=['xAxis'])
         )
+
         return plant_stats_df
 
     MILLISECONDS_IN_A_DAY = 24 * 60 * 60 * 1000  # Milliseconds in one day
@@ -71,7 +79,7 @@ class FusionSolarClientParsed(FusionSolarClientExtended):
         plant_stats = self.get_plant_stats_parsed(
             plant_id,
             timestamp_millis,
-            time_zone=0,
+            # time_zone=0,
             time_zone_str=FusionSolarClientParsed.TIMEZONE_UTC,
             time_zone_str_convert=time_zone_str_convert,
         )

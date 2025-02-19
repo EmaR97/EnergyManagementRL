@@ -15,7 +15,7 @@ class TelegramBot:
         self.system = system
         self.token = token
         self.allowed_users = set(allowed_users)  # Use a set for O(1) lookups
-        self.logger = logger or get_logger("TB")
+        self.logger = logger or get_logger(self.__class__.__name__)
         self.app = Application.builder().token(token).build()
         self._setup_handlers()
         self.logger.info("TelegramBot initialized.")

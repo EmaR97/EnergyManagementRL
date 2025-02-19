@@ -33,8 +33,8 @@ class EnergyManagementSystem:
 
     def __init__(self, client: FusionSolarClientParsed, plant_id: str, battery_id: str,
                  production_forecaster: EnergyPredictionSystem, model: DQN, battery_capacity_kw: int = 10,
-                 battery_min_percentage: int = 10):
-        self.logger = get_logger("EMS", logging.WARNING)
+                 battery_min_percentage: int = 10, logger: logging.Logger = None):
+        self.logger = logger or get_logger(self.__class__.__name__, logging.WARNING)
         self.client: FusionSolarClientParsed = client
         self.plant_id: str = plant_id
         self.battery_id: str = battery_id
@@ -57,7 +57,7 @@ class EnergyManagementSystem:
         """Retrieve and process historical load data."""
         now = datetime.now()
         history = pd.concat([self.client.get_plant_stats_parsed(self.plant_id,
-                                                                query_time=self.client._get_day_start_sec() + i * self.client.MILLISECONDS_IN_A_DAY,
+                                                                query_time=self.client.get_day_start_sec() + i * self.client.MILLISECONDS_IN_A_DAY,
                                                                 time_zone=2,
                                                                 time_zone_str='Europe/Rome') for i in
                              [-2, -1, 0]]).usePower
@@ -188,7 +188,7 @@ class EnergyManagementSystem:
             if not e.args or e.args[0] != "Failed to reset session and login again.":
                 raise e
             self.logger.warning(f"Resetting session")
-            self.client._configure_session()
+            self.client.reset_session()
             return
         now = datetime.now()
         state.update({'timestamp': now.timestamp(), 'action': int(action)})
