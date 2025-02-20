@@ -67,10 +67,17 @@ class TelegramBot:
         self.app.add_handler(CommandHandler('start', self.handle_help))
 
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_invalid))
+        self.app.add_handler(MessageHandler(filters.COMMAND, self.handle_unknown_command))
         self.app.add_handler(CallbackQueryHandler(self.button_callback))
 
         self.app.add_error_handler(self._error_handler)
         self.logger.info("Handlers have been set up.")
+
+    @authorized_only
+    async def handle_unknown_command(self, update: Update, context: CallbackContext):
+        user_id = update.message.from_user.id
+        self.logger.info(f"User {user_id} entered an unknown command: {update.message.text}")
+        await update.message.reply_text("Unknown command! Use '/help' to see available commands.")
 
     @authorized_only
     async def handle_help(self, update: Update, context: CallbackContext):
