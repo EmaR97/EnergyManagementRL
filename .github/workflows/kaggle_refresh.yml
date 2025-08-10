@@ -1,34 +1,35 @@
 name: Refresh Kaggle Notebook
 
 on:
-#  schedule:
-#    - cron: '0 11,23 * * *' # Runs at 11:00 and 23:00 UTC daily
+  schedule:
+    - cron: '0 11,23 * * *' # Runs at 11:00 and 23:00 UTC daily
   workflow_dispatch:
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+    environment: test
 
+    env:
+      KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+      KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+      KAGGLE_KERNEL: ${{ secrets.KAGGLE_USERNAME }}/${{vars.KAGGLE_NOTEBOOK_ID}}
+
+    steps:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install Kaggle API
-        run: pip install kaggle
+      - name: Install Kaggle CLI
+        run: pip install --quiet kaggle
 
-      - name: Restore Kaggle API token
+      - name: Pull notebook
         run: |
-          mkdir -p ~/.kaggle
-#          echo "${{ secrets.KAGGLE_JSON }}" | tee ~/.kaggle/kaggle.json
-          echo "${{ secrets.KAGGLE_JSON }}" > ~/.kaggle/kaggle.json
-          chmod 600 ~/.kaggle/kaggle.json
+          echo "[$(date)] Pulling latest version of $KAGGLE_KERNEL"
+          kaggle kernels pull "$KAGGLE_KERNEL" -m --path .
 
-      - name: Pull and push notebook
+      - name: Push notebook
         run: |
-          kaggle kernels pull  emanuelerapisarda/06-real-system-interaction -m
-          # Optionally fix metadata if needed
-          # sed -i 's!code/!!g;s!datasets/!!g' kernel-metadata.json
-          kaggle kernels push
+          echo "[$(date)] Pushing updated notebook to Kaggle"
+          kaggle kernels push --path .

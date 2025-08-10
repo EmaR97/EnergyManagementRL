@@ -1,0 +1,51 @@
+name: Check & Reschedule Kaggle Notebook
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"  # Every 30 minutes
+  workflow_dispatch:
+
+jobs:
+  check-and-reschedule:
+    runs-on: ubuntu-latest
+    environment: test
+
+    env:
+      KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+      KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+      KAGGLE_KERNEL: ${{ secrets.KAGGLE_USERNAME }}/${{vars.KAGGLE_NOTEBOOK_ID}}
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Kaggle CLI
+        run: pip install --quiet kaggle
+
+      - name: Debug - Print notebook status output
+        run: kaggle kernels status "$KAGGLE_KERNEL"
+
+
+      - name: Check notebook status
+        id: status
+        run: |
+          echo "[$(date)] Checking status for: $KAGGLE_KERNEL"
+          STATUS=$(kaggle $KAGGLE_KERNEL status $1 | grep "status" | awk -F': ' '{print $2}' | tr -d ' ')
+          
+          if [[ -z "$STATUS" ]]; then
+            echo "Error: Failed to retrieve notebook status." >&2
+            exit 1
+          fi
+
+          echo "Current status: $STATUS"
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+
+      - name: Reschedule notebook if failed
+        if: steps.status.outputs.status == 'error'
+        run: |
+          echo "[$(date)] Notebook status is 'error'. Rescheduling..."
+          kaggle kernels push --path .
+          echo "Notebook rescheduled successfully."
+
