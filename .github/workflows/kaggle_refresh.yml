@@ -1,8 +1,8 @@
 name: Refresh Kaggle Notebook
 
 on:
-  schedule:
-    - cron: '0 11,23 * * *' # Runs at 11:00 and 23:00 UTC daily
+#  schedule:
+#    - cron: '0 11,23 * * *' # Runs at 11:00 and 23:00 UTC daily
   workflow_dispatch:
 
 jobs:
