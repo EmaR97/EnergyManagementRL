@@ -1,0 +1,34 @@
+name: Refresh Kaggle Notebook
+
+on:
+#  schedule:
+#    - cron: '0 11,23 * * *' # Runs at 11:00 and 23:00 UTC daily
+  workflow_dispatch:
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Kaggle API
+        run: pip install kaggle
+
+      - name: Restore Kaggle API token
+        run: |
+          mkdir -p ~/.kaggle
+#          echo "${{ secrets.KAGGLE_JSON }}" | tee ~/.kaggle/kaggle.json
+          echo "${{ secrets.KAGGLE_JSON }}" > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+
+      - name: Pull and push notebook
+        run: |
+          kaggle kernels pull  emanuelerapisarda/06-real-system-interaction -m
+          # Optionally fix metadata if needed
+          # sed -i 's!code/!!g;s!datasets/!!g' kernel-metadata.json
+          kaggle kernels push
