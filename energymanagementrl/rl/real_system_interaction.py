@@ -49,6 +49,7 @@ class EnergyManagementSystem:
         self.active = False
         self.last_battery_mode = None
         self._stop_control_loop = False
+        self._control_loop_stopped = asyncio.Event()
 
     def get_flow_and_energy(self):
         """Retrieve and calculate energy flow data from the plant."""
@@ -175,6 +176,7 @@ class EnergyManagementSystem:
     async def control_loop(self, retry_delay: int = 10, retry_attempts: int = 10):
         """Run the control loop at 5-minute intervals."""
         self._stop_control_loop = False
+        self._control_loop_stopped.clear()
         self.logger.info("Starting Control loop")
         try:
             while not self._stop_control_loop:
@@ -183,9 +185,11 @@ class EnergyManagementSystem:
             self.logger.info("Control loop terminated")
             if self.get_active():
                 self._reset_battery_mode(retry_delay, retry_attempts)
+            self._control_loop_stopped.set()
 
-    def stop_control_loop(self):
+    async def stop_control_loop(self):
         self._stop_control_loop = True
+        await self._control_loop_stopped.wait()
 
     async def _run_control_cycle(self, retry_delay: int):
         """Execute a single control cycle."""
