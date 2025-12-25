@@ -1,6 +1,6 @@
 import time
 from enum import Enum
-from typing import List
+from typing import List, Union
 
 from fusion_solar_py.client import FusionSolarClient, logged_in
 from fusion_solar_py.exceptions import FusionSolarException
@@ -17,9 +17,11 @@ class FusionSolarExceptionExtended(FusionSolarException):
         super().__init__(message)
         self.code = code if code is not None else FusionSolarExceptionExtended.ErrorCode.GENERIC
 
+
 class BatteryWorkingMode(Enum):
     MAXIMUM_SELF_CONSUMPTION = 2
     FULLY_FEED_TO_GRID = 4
+
 
 class FusionSolarClientExtended(FusionSolarClient):
     """Extension of FusionSolarClient with additional functionality."""
@@ -38,20 +40,13 @@ class FusionSolarClientExtended(FusionSolarClient):
                 sleep(backoff_factor)
         raise RuntimeError("keep_alive failed after multiple attempts.")
 
-
-
     @logged_in
     def set_battery_working_mode(self, battery_id, mode: BatteryWorkingMode):
         if not isinstance(mode, BatteryWorkingMode):
-            raise ValueError(
-                f"Invalid mode: {mode}. Expected one of {[e.name for e in BatteryWorkingMode]}"
-            )
+            raise ValueError(f"Invalid mode: {mode}. Expected one of {[e.name for e in BatteryWorkingMode]}")
 
         url = f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/device/v1/deviceExt/set-config-signals"
-        data = {
-            "dn": battery_id,
-            "changeValues": f'[{{"id":"230320241","value":"{mode.value}"}}]',
-        }
+        data = {"dn": battery_id, "changeValues": f'[{{"id":"230320241","value":"{mode.value}"}}]', }
 
         response = self._session.post(url, data=data)
         response.raise_for_status()
@@ -62,19 +57,13 @@ class FusionSolarClientExtended(FusionSolarClient):
                 if data['code'] != 0:
                     raise FusionSolarExceptionExtended(
                         message=f"Failed to set mode for battery {battery_id}, response:{response}",
-                        code=FusionSolarExceptionExtended.ErrorCode.BATTERY_WORK_MODE
-                    )
+                        code=FusionSolarExceptionExtended.ErrorCode.BATTERY_WORK_MODE)
         except ValueError:
             print("Error: The response is not in JSON format.")
 
     @logged_in
-    def get_plant_stats(
-            self,
-            plant_id: str,
-            query_time: int = None,
-            time_zone: int = 2,
-            time_zone_str: str = "Europe/Vienna"
-    ) -> dict:
+    def get_plant_stats(self, plant_id: str, query_time: int = None, time_zone: int = 2,
+                        time_zone_str: str = "Europe/Vienna") -> dict:
         """
         Retrieves energy usage statistics for a specified plant.
 
@@ -105,45 +94,30 @@ class FusionSolarClientExtended(FusionSolarClient):
 
         response = self._session.get(
             url=f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/station/v1/overview/energy-balance",
-            params={
-                "stationDn": plant_id,
-                "timeDim": 2,
-                "queryTime": query_time,
-                # NOTE: Ensure timestamp aligns with API expectations (milliseconds or microseconds)
-                "timeZone": time_zone,  # Example: 1 for no daylight saving
-                "timeZoneStr": time_zone_str,
-                "_": round(time.time() * 1000),  # Timestamp for API request tracking
-            },
-        )
+            params={"stationDn": plant_id, "timeDim": 2, "queryTime": query_time,
+                    # NOTE: Ensure timestamp aligns with API expectations (milliseconds or microseconds)
+                    "timeZone": time_zone,  # Example: 1 for no daylight saving
+                    "timeZoneStr": time_zone_str, "_": round(time.time() * 1000),  # Timestamp for API request tracking
+                    }, )
         response.raise_for_status()
         plant_data = response.json()
 
         if not plant_data.get("success") or "data" not in plant_data:
-            raise FusionSolarException(
-                f"Failed to retrieve plant statistics for plant ID {plant_id}."
-            )
+            raise FusionSolarException(f"Failed to retrieve plant statistics for plant ID {plant_id}.")
 
         return plant_data["data"]
 
     @logged_in
-    def get_plant_details(
-            self,
-            plant_id: str,
-    ) -> dict:
+    def get_plant_details(self, plant_id: str, ) -> dict:
         response = self._session.get(
             url=f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/station/v1/overview/station-detail",
-            params={
-                "stationDn": plant_id,
-                "_": round(time.time() * 1000),  # Timestamp for API request tracking
-            },
-        )
+            params={"stationDn": plant_id, "_": round(time.time() * 1000),  # Timestamp for API request tracking
+                    }, )
         response.raise_for_status()
         plant_details = response.json()
 
         if not plant_details.get("success") or "data" not in plant_details:
-            raise FusionSolarException(
-                f"Failed to retrieve plant statistics for plant ID {plant_id}."
-            )
+            raise FusionSolarException(f"Failed to retrieve plant statistics for plant ID {plant_id}.")
 
         return plant_details["data"]
 
@@ -155,13 +129,14 @@ class FusionSolarClientExtended(FusionSolarClient):
         VOLTAGE = "30006"
         SOC = "30007"
 
+    class InverterSignal(Enum):
+        """Enumeration of Inverter signal types."""
+        GRID_VOLTAGE = "30001"
+        GRID_CURRENT = "30007"
+
     @logged_in
-    def get_battery_day_stats(
-            self,
-            battery_id: str,
-            query_time: int = None,
-            signals: List[BatterySignal] = None,
-    ) -> dict:
+    def get_battery_day_stats(self, battery_id: str, query_time: int = None,
+                              signals: Union[List[BatterySignal], List[InverterSignal]] = None) -> dict:
         """
         Retrieves daily statistics for a specified battery.
 
@@ -174,9 +149,9 @@ class FusionSolarClientExtended(FusionSolarClient):
                            for which the data should be retrieved, in milliseconds.
                            Defaults to the current day if not provided.
         :type query_time: int, optional
-        :param signals: A list of `BatterySignal` enum members specifying the
+        :param signals: A list of `BatterySignal` or `InverterSignal` enum members specifying the
                         desired metrics to retrieve. Defaults to SOC and charge/discharge power.
-        :type signals: List[BatterySignal], optional
+        :type signals: List[BatterySignal] or List[InverterSignal], optional
         :return: A dictionary containing the requested battery data.
         :rtype: dict
         :raises ValueError: If `battery_id` is invalid or if `signals` contains invalid entries.
@@ -189,8 +164,8 @@ class FusionSolarClientExtended(FusionSolarClient):
 
         if signals is None:
             signals = [self.BatterySignal.CHARGE_DISCHARGE_POWER_KW, self.BatterySignal.SOC]
-        elif not all(isinstance(signal, self.BatterySignal) for signal in signals):
-            raise ValueError("Invalid signals. All items must be instances of `BatterySignal`.")
+        elif not all(isinstance(signal, (self.BatterySignal, self.InverterSignal)) for signal in signals):
+            raise ValueError("Invalid signals. All items must be instances of `BatterySignal` or `InverterSignal`.")
 
         if query_time is None:
             query_time = self._get_day_start_sec()  # Default to the start of the current day
@@ -200,24 +175,24 @@ class FusionSolarClientExtended(FusionSolarClient):
         # API request
         response = self._session.get(
             url=f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/device/v1/device-history-data",
-            params={
-                "signalIds": [signal.value for signal in signals],  # Convert enums to their values
-                "deviceDn": battery_id,
-                "date": query_time,
-                "_": current_time,
-            },
-        )
+            params={"signalIds": [signal.value for signal in signals],  # Convert enums to their values
+                "deviceDn": battery_id, "date": query_time, "_": current_time, })
         response.raise_for_status()
 
-        battery_data = response.json()
+        try:
+            battery_data = response.json()
+        except ValueError as e:
+            raise FusionSolarException(f"Failed to parse response JSON: {str(e)}")
 
         if not battery_data.get("success") or "data" not in battery_data:
-            raise FusionSolarException(
-                f"Failed to retrieve battery day stats for battery ID {battery_id}."
-            )
+            raise FusionSolarException(f"Failed to retrieve battery day stats for battery ID {battery_id}.")
 
         # Map signal IDs to their names
-        for key in battery_data["data"]:
-            battery_data["data"][key]["name"] = self.BatterySignal(key).name
+        if signals and isinstance(signals[0], self.BatterySignal):
+            for key in battery_data["data"]:
+                battery_data["data"][key]["name"] = self.BatterySignal(key).name
+        elif signals and isinstance(signals[0], self.InverterSignal):
+            for key in battery_data["data"]:
+                battery_data["data"][key]["name"] = self.InverterSignal(key).name
 
         return battery_data["data"]
