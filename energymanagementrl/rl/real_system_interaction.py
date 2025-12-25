@@ -1,136 +1,253 @@
-import json
+import asyncio
 import logging
-import os
-from contextlib import contextmanager
-from datetime import datetime
+from datetime import timedelta
+from http.client import RemoteDisconnected
+from time import sleep
 
-try:
-    import pandas as pd
-except ImportError:
-    raise ImportError("Please install pandas: pip install pandas")
+import numpy as np
+import pandas as pd
+from fusion_solar_py.exceptions import FusionSolarException
+from requests.exceptions import ConnectionError
+from stable_baselines3 import DQN
 
-try:
-    from kaggle_secrets import UserSecretsClient
-except ImportError:
-    raise ImportError("This script must run in a Kaggle environment with kaggle_secrets available.")
-
-DATASET_NAME = "logs-persistence-test"
-DATASET_FILE = "logs.csv"
-METADATA_FILE = "dataset-metadata.json"
-VERSION_MESSAGE = "Updated dataset with duplicated last row"
-DELETE_OLD_VERSIONS = False
-
-# Get Kaggle credentials
-user_secrets = UserSecretsClient()
-kaggle_key = user_secrets.get_secret("KAGGLE_KEY")
-kaggle_username = user_secrets.get_secret("KAGGLE_USERNAME")
-
-# Create .kaggle directory
-kaggle_config_dir = os.path.expanduser('~/.kaggle')
-os.makedirs(kaggle_config_dir, exist_ok=True)
-
-# Write kaggle.json
-kaggle_json_path = os.path.join(kaggle_config_dir, 'kaggle.json')
-with open(kaggle_json_path, 'w') as f:
-    json.dump({"username": kaggle_username, "key": kaggle_key}, f)
-os.chmod(kaggle_json_path, 0o600)
-
-try:
-    import kaggle
-    from kaggle import api as kaggle_api
-except ImportError:
-    raise ImportError("Please install kaggle: pip install kaggle")
-
-kaggle.api.authenticate()
-
-DATASET_ID = f"{kaggle_username}/{DATASET_NAME}"
-DATASET_DIR = f"./{DATASET_NAME}"
+from energymanagementrl.fusion_solar_connector import *
+from energymanagementrl.production_forecast import *
+from energymanagementrl.rl import extract_values_gen
+from energymanagementrl.simulation import sparse_matrix
+from energymanagementrl.utility import get_logger
 
 
-def download_dataset(dataset_id: str, output_dir: str, file_path: str):
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    if not os.path.exists(os.path.join(output_dir, file_path)):
-        print(f"Downloading dataset {dataset_id}...")
-        kaggle_api.dataset_download_files(dataset_id, path=output_dir, unzip=True)
-        kaggle_api.dataset_metadata(dataset_id, path=output_dir)
-        print("Download and extraction completed.\n")
+def get_now_utc():
+    return pd.Timestamp.now(tz='UTC').to_pydatetime()
 
 
-def update_metadata(file_path: str, dataset_id: str, output_dir: str):
-    try:
-        with open(os.path.join(output_dir, file_path), "r") as f:
-            metadata = json.load(f)
-        # If it's a stringified JSON, parse it; otherwise leave it as-is.
-        if isinstance(metadata, str):
-            metadata = json.loads(metadata)
-        metadata["id"] = dataset_id
-        with open(os.path.join(output_dir, file_path), "w") as f:
-            json.dump(metadata, f, indent=4)
-    except Exception as e:
-        print(f"Metadata update error: {e}")
+class EnergyManagementSystem:
+    """
+    Manages energy flows and controls battery systems based on real-time data and predictions.
 
+    Attributes:
+        client: FusionSolarClientParsed instance for solar data access.
+        plant_id: Unique identifier for the solar plant.
+        battery_id: Unique identifier for the battery.
+        production_forecaster: Instance for energy production forecasting.
+        model: Reinforcement learning model for decision-making.
+        battery_capacity_kw: Maximum battery capacity in kW.
+        battery_min_percentage: Minimum state of charge as a percentage.
+    """
 
-def upload_new_version(directory: str, message: str, delete_old: bool):
-    try:
-        kaggle_api.dataset_create_version(directory, message, delete_old_versions=delete_old)
-    except Exception as e:
-        print(f"Upload error: {e}")
+    def __init__(self, client: FusionSolarClientParsed, plant_id: str, battery_id: str,
+                 production_forecaster: EnergyPredictionSystem, model: DQN, battery_capacity_kw: int = 10,
+                 battery_min_percentage: int = 10, logger: logging.Logger = None):
+        self.logger = logger or get_logger(self.__class__.__name__, logging.WARNING)
+        self.client: FusionSolarClientParsed = client
+        self.plant_id: str = plant_id
+        self.battery_id: str = battery_id
+        self.production_forecaster: EnergyPredictionSystem = production_forecaster
+        self.model: DQN = model
+        self.battery_capacity_kw = battery_capacity_kw
+        self.battery_min_percentage = battery_min_percentage
+        self.active = False
+        self.last_battery_mode = None
+        self._stop_control_loop = False
+        self._control_loop_stopped = asyncio.Event()
 
+    def get_flow_and_energy(self):
+        """Retrieve and calculate energy flow data from the plant."""
+        flow_parsed = self.get_plant_stats()
+        prod_kw = flow_parsed['prod']
+        load_kw = flow_parsed['load']
+        charge_kw = flow_parsed['store']
+        grid_kw = flow_parsed['grid']
+        soc = flow_parsed['soc']
+        prod_kwh, load_kwh, charge_kwh, grid_kwh = [i / 12 for i in (prod_kw, -load_kw, charge_kw, grid_kw)]
+        stored_kwh = (soc - self.battery_min_percentage) / 100 * self.battery_capacity_kw
+        return prod_kwh, load_kwh, charge_kwh, grid_kwh, stored_kwh
 
-class KaggleDatasetHandler(logging.Handler):
-    log_df: pd.DataFrame
+    def get_plant_stats(self):
+        return self.client.get_plant_flow_parsed(self.plant_id)
 
-    def emit(self, record):
+    def get_history(self):
+        """Retrieve and process historical load data."""
+
+        now_gmt = np.datetime64(get_now_utc().replace(tzinfo=None))
+        history = pd.concat([self.client.get_plant_stats_parsed(self.plant_id,
+                                                                query_time=self.client.get_day_start_sec() + i * self.client.MILLISECONDS_IN_A_DAY,
+                                                                time_zone=2, time_zone_str='Europe/Rome') for i in
+                             [-2, -1, 0]]).usePower
+
+        history = history[history.index <= now_gmt][-288 * 2:].replace('--', np.nan)
+        history = history.astype('float')
+
+        if history.isnull().values.any():
+            self.logger.warning("Missing values in history data. Filling with mean.")
+            history.fillna(history.mean(), inplace=True)
+
+        load_kwh_last_2day = history.resample('4h').mean()[1:] / 12
+        return load_kwh_last_2day
+
+    def compute_production_residual(self):
+        """Compute production residuals based on forecasts."""
+        now_gmt = get_now_utc()
+        now_gmt_5m = now_gmt.replace(minute=now_gmt.minute // 5 * 5)
+        start = now_gmt_5m.strftime('%Y-%m-%d %H:%M')
+        end = (now_gmt_5m + timedelta(days=2)).strftime('%Y-%m-%d %H:%M')
+
+        def get_forecast(weather_type):
+            """Fetch energy production predictions for a given weather type."""
+            return self.production_forecaster.run_energy_production_prediction(start, end, weather_type) / 12
+
+        clear_sky_df = get_forecast(WeatherType.clear_sky)
+        open_meteo_df = get_forecast(WeatherType.open_meteo_forecast)
+        residual = abs(clear_sky_df.inverter_ac - open_meteo_df.inverter_ac)
+
+        forecast_range = [i * 12 for i in range(48)]
+        prod_kwh_next_2day = np.array(open_meteo_df.inverter_ac.iloc[forecast_range]) @ sparse_matrix
+        residual_kwh_next_2day = np.array(residual.iloc[forecast_range]) @ sparse_matrix
+
+        return prod_kwh_next_2day, residual_kwh_next_2day
+
+    @staticmethod
+    def _build_system_state(prod_kwh: float, load_kwh: float, charge_kwh: float, grid_kwh: float, stored_kwh: float,
+                            load_kwh_last_2day, prod_kwh_next_2day, residual_kwh_next_2day) -> dict[str, any]:
+        """Construct the system state from energy data."""
+        state = {'prod_sim': {}, 'cons_sim': {}, 'batt_sim': {}, 'grid_sim': {}, }
+
+        for i, value in enumerate(prod_kwh_next_2day):
+            state['prod_sim'][f"energy_sample_{i}"] = round(float(value), 3)
+        state["prod_sim"]["energy"] = prod_kwh
+
+        for i, value in enumerate(residual_kwh_next_2day):
+            state['prod_sim'][f"residual_sample_{i}"] = round(float(value), 3)
+
+        for i, value in enumerate(load_kwh_last_2day):
+            state['cons_sim'][f"energy_sample_{i}"] = round(float(value), 3)
+        state["cons_sim"]["energy"] = round(load_kwh, 3)
+
+        state["batt_sim"]["stored"] = round(stored_kwh, 3)
+        state["batt_sim"]["charge_rate"] = -round(charge_kwh, 3) if charge_kwh < 0 else 0
+        state["batt_sim"]["discharge_rate"] = round(charge_kwh, 3) if charge_kwh > 0 else 0
+
+        state["grid_sim"]["feed_to_grid"] = -round(grid_kwh, 3) if grid_kwh < 0 else 0
+        state["grid_sim"]["taken_from_grid"] = round(grid_kwh, 3) if grid_kwh > 0 else 0
+
+        return state
+
+    def get_system_state(self):
+        """Retrieve and build the current system state."""
+        prod_kwh, load_kwh, charge_kwh, grid_kwh, stored_kwh = self.get_flow_and_energy()
+        load_kwh_last_2day = self.get_history()
+        prod_kwh_next_2day, residual_kwh_next_2day = self.compute_production_residual()
+
+        return self._build_system_state(prod_kwh, load_kwh, charge_kwh, grid_kwh, stored_kwh, load_kwh_last_2day,
+                                        prod_kwh_next_2day, residual_kwh_next_2day)
+
+    def execute_control(self):
+        """Execute a control decision using the RL model."""
+        state = self.get_system_state()
+        obs = np.array(list(extract_values_gen(state)))
+
+        if len(obs) != 55:
+            raise FusionSolarExceptionExtended("Invalid observation length",
+                                               FusionSolarExceptionExtended.ErrorCode.PARSING)
+
+        action, _ = self.model.predict(obs)
+
+        battery_mode = (
+            BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION if action == 1 else BatteryWorkingMode.FULLY_FEED_TO_GRID)
+
+        if self.get_active():
+            current_state = self.get_real_battery_mode()
+            if battery_mode.value != current_state:
+                self.client.set_battery_working_mode(self.battery_id, battery_mode)
+        self.logger.warning(f"Setting Battery Mode to: {battery_mode.name}")
+        self.set_last_battery_mode(battery_mode.name)
+        now_gmt = get_now_utc()
+        state.update({'timestamp': now_gmt.timestamp(), 'action': int(action)})
+        self.logger.info(f"State: {state}")
+        return state, action
+
+    def get_real_battery_mode(self):
         try:
-            entry = {'asctime': self.format(record).split(' - ')[0], 'name': record.name, 'levelname': record.levelname,
-                     'message': record.getMessage()}
-            self.log_df.loc[len(self.log_df)] = entry
-        except Exception as e:
-            print(f"Logging error: {e}")
+            return self.get_plant_stats()['battery_mode']
+        except ValueError as e:
+            self.logger.error(e)
+            raise FusionSolarExceptionExtended('', FusionSolarExceptionExtended.ErrorCode.PARSING)
 
-    def __init__(self, _log_df):
-        super().__init__()
-        self.log_df = _log_df
+    async def control_loop(self, retry_delay: int = 10, retry_attempts: int = 10):
+        """Run the control loop at 5-minute intervals."""
+        self._stop_control_loop = False
+        self._control_loop_stopped.clear()
+        self.logger.info("Starting Control loop")
+        try:
+            while not self._stop_control_loop:
+                await self._run_control_cycle(retry_delay)
+        finally:
+            self.logger.info("Control loop terminated")
+            if self.get_active():
+                self._reset_battery_mode(retry_delay, retry_attempts)
+            self._control_loop_stopped.set()
 
+    async def stop_control_loop(self):
+        self._stop_control_loop = True
+        await self._control_loop_stopped.wait()
 
-@contextmanager
-def logger_to_kaggle_dataset(logger, dataset_id, dataset_dir, dataset_file, metadata_file):
-    filename = os.path.join(dataset_dir, datetime.now().strftime("%Y%m%d") + "_" + dataset_file)
+    async def _run_control_cycle(self, retry_delay: int):
+        """Execute a single control cycle."""
+        try:
+            self.execute_control()
+        except (FusionSolarExceptionExtended, RemoteDisconnected, ConnectionError) as e:
+            self.logger.error(f"Error: {getattr(e, 'code', str(e))}")
+            await asyncio.sleep(retry_delay)
+            return
+        except FusionSolarException as e:
+            if not e.args or e.args[0] != "Failed to reset session and login again.":
+                raise e
+            self.logger.warning(f"Resetting session")
+            self.client.reset_session()
+            return
+        now_gmt = get_now_utc()
+        next_time = (now_gmt + timedelta(minutes=5 - now_gmt.minute % 5)).replace(second=30, microsecond=0)
+        sleep_duration = (next_time - now_gmt).total_seconds()
+        await asyncio.sleep(sleep_duration)
 
-    handler = None  # <-- Add this
-    handler_added = False  # <-- And this
+    def _reset_battery_mode(self, retry_delay: int, retry_attempts: int):
+        """Reset the battery mode with retries."""
+        for attempt in range(retry_attempts):
+            try:
+                self.client.set_battery_working_mode(self.battery_id, BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION)
+                self.logger.warning("Battery mode reset")
+                break
+            except (FusionSolarExceptionExtended, RemoteDisconnected, ConnectionError) as e:
+                self.logger.error(f"Attempt-{attempt} failed. Error: {getattr(e, 'code', str(e))}")
+                sleep(retry_delay)
+            except Exception as e:
+                self.logger.critical(f"Unexpected error during battery mode reset: {str(e)}")
+                break
 
-    try:
-        download_dataset(dataset_id, dataset_dir, metadata_file)
+    def set_active(self, is_active: bool):
+        """
 
-        if not os.path.exists(filename):
-            log_df = pd.DataFrame(columns=['asctime', 'name', 'levelname', 'message'])
-            log_df.to_csv(filename, index=False)
-        else:
-            log_df = pd.read_csv(filename)
+        :param is_active:
+        """
+        self.active = is_active
 
-        if not any(isinstance(h, KaggleDatasetHandler) for h in logger.handlers):
-            handler = KaggleDatasetHandler(log_df)
-            logger.addHandler(handler)
-            handler_added = True
+    def get_active(self) -> bool:
+        """
 
-        yield logger
-    finally:
-        if handler is not None:  # <-- Important safety check
-            handler.log_df.to_csv(filename, index=False)
+        :return:
+        """
+        return self.active
 
-        update_metadata(metadata_file, dataset_id, dataset_dir)
-        upload_new_version(dataset_dir, VERSION_MESSAGE, DELETE_OLD_VERSIONS)
+    def get_last_battery_mode(self) -> str:
+        """
 
-        if handler_added:
-            logger.removeHandler(handler)
+        :return:
+        """
+        return self.last_battery_mode
 
+    def set_last_battery_mode(self, battery_mode: str):
+        """
 
-mylogger = logging.getLogger("TestLogger")
-mylogger.setLevel(logging.INFO)
-
-with logger_to_kaggle_dataset(mylogger, DATASET_ID, DATASET_DIR, DATASET_FILE, METADATA_FILE) as log:
-    log.info(f"Notebook run at {datetime.now()}")
-    log.warning("This is a warning")
-    log.error("This is an error")
+        :param battery_mode:
+        """
+        self.last_battery_mode = battery_mode
