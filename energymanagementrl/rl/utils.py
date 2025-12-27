@@ -43,7 +43,7 @@ def test_plot(env, model, steps, to_show=None, seed=None, ):
 
 def load_model_with_weights(env, weight_path, policy="MlpPolicy"):
     model = DQN(policy, env)  # Initialize the model with the specified environment
-    policy_weights = torch.load(weight_path, weights_only=False)  # Load the policy weights
+    policy_weights = torch.load(weight_path, weights_only=False,map_location=torch.device('cpu'))  # Load the policy weights
     model.policy.load_state_dict(policy_weights)  # Load weights into the model's policy
     return model
 

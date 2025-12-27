@@ -13,3 +13,5 @@ requests~=2.32.3
 python-telegram-bot~=21.10
 tornado~=6.4.1
 pytz
+python-dotenv
+kaggle
