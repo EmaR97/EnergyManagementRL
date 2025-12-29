@@ -1,6 +1,6 @@
 /.idea
 /.env
-/logs
+/data/logs
 /notebooks/.cache.sqlite
 /notebooks/.log
 /data

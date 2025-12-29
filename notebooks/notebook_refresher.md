@@ -100,7 +100,7 @@ To ensure uninterrupted execution, we add an automated status check every 30 min
    echo "[$(date)] Checking status of notebook: $1"
 
    # Fetch status
-   STATUS=$(kaggle kernels status $1 | grep "status" | awk -F': ' '{print $2}' | tr -d ' ')
+   STATUS=$(kaggle kernels status $1 | grep -oP '(?<=has status ").*(?=")' | tr -d ' ')
 
    echo "[$(date)] Current status: $STATUS"
 
@@ -140,7 +140,7 @@ To ensure uninterrupted execution, we add an automated status check every 30 min
      ```
    - Check the status every 30 minutes and reschedule if needed:
      ```bash
-     */30 * * * * $HOME/kaggle_scheduler/check_and_reschedule.sh username/notebook-name >> $HOME/kaggle_scheduler/status_debug.log 2>&1
+     10,40 * * * * $HOME/kaggle_scheduler/check_and_reschedule.sh username/notebook-name >> $HOME/kaggle_scheduler/status_debug.log 2>&1
      ```
 
 3. Verify your changes:
