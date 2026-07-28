@@ -23,16 +23,16 @@ class GridSim(BaseSim):
         power_for_voltage (float): Power per voltage unit for calculating grid acceptance based on voltage.
     """
 
-    def __init__(self, feed_in_max, feed_in_min, voltage_max, voltage_min, max_taken_from, energy_price_sell,
-                 energy_price_buy, voltage_series, seed=None):
+    def __init__(self, feed_in_max, feed_in_min, voltage_max, voltage_min, max_taken_from, energy_price_sell_per_kwh,
+                 energy_price_buy_per_kwh, voltage_series, seed=None):
         super().__init__(seed)
         self.feed_in_max_known = feed_in_max
         self.feed_in_min = feed_in_min
         self.voltage_max = voltage_max
         self.voltage_min_known = voltage_min
         self.max_taken_from = max_taken_from
-        self.energy_price_sell = energy_price_sell
-        self.energy_price_buy = energy_price_buy
+        self.energy_price_sell = energy_price_sell_per_kwh
+        self.energy_price_buy = energy_price_buy_per_kwh
         self.current_feed_to_grid = 0.0
         self.current_taken_from_grid = 0.0
         self.voltage_series = list(voltage_series)

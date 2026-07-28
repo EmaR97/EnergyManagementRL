@@ -82,12 +82,36 @@ class FusionSolarClientParsed(FusionSolarClientExtended):
         pd.DataFrame, pd.DataFrame]:
         """
         Fetch and process historical plant data.
+        Iterates from newest to oldest day. Stops early when it finds a full week
+        where all columns except SOC are '--' (no data available).
         Returns both unformatted and final cleaned plant history.
         """
         days = calculate_days(start_time, end_time)
+        EMPTY_WEEK_THRESHOLD = 7
 
-        historical_data = [self.fetch_statistics(battery_id, inverter_id, plant_id, timestamp, time_zone_str_convert) for
-                           timestamp in days]
+        empty_streak = 0
+        historical_data = []
+
+        for timestamp in reversed(days):
+            day_df = self.fetch_statistics(battery_id, inverter_id, plant_id, timestamp, time_zone_str_convert)
+
+            non_soc_cols = [c for c in day_df.columns if c != 'SOC']
+            is_empty_day = all((day_df[c] == '--').all() for c in non_soc_cols)
+
+            if is_empty_day:
+                empty_streak += 1
+                if empty_streak >= EMPTY_WEEK_THRESHOLD:
+                    break
+            else:
+                empty_streak = 0
+                historical_data.append(day_df)
+
+        historical_data.reverse()
+
+        if not historical_data:
+            empty = pd.DataFrame()
+            return empty, empty
+
         unformatted_data = pd.concat(historical_data, axis=0)
         cleaned_data = clean_and_format_data(unformatted_data)
         data_with_calculations = add_calculated_columns(cleaned_data)
