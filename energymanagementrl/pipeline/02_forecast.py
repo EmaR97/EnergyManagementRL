@@ -1,8 +1,7 @@
-import os
-
 import pandas as pd
 
 from .config import get_plant_config
+from .io import save_with_suffix
 
 from ..utility import get_logger
 
@@ -17,7 +16,7 @@ def run(config: dict):
     data_dir = config["data_paths"].get("simulation_inputs", "../data/simulation_inputs")
 
     plant_history = pd.read_csv(
-        os.path.join(data_dir, "plant_history.csv"), index_col="timestamp", parse_dates=True
+        f"{data_dir}/plant_history.csv", index_col="timestamp", parse_dates=True
     )
 
     start = plant_history.index.min()
@@ -43,7 +42,7 @@ def run(config: dict):
     date_start = start.strftime("%Y%m%d")
     date_end = end.strftime("%Y%m%d")
     suffix = f"{date_start}_{date_end}"
+    basename = f"forecasts.{num_panels}_panels"
 
-    forecasts.to_csv(os.path.join(data_dir, f"forecasts.{num_panels}_panels.{suffix}.csv"), index_label="timestamp")
-    forecasts.to_csv(os.path.join(data_dir, f"forecasts.{num_panels}_panels.csv"), index_label="timestamp")
+    save_with_suffix(forecasts, data_dir, basename, suffix)
     logger.info(f"Forecasts saved with suffix {suffix}")

@@ -72,16 +72,10 @@ def main():
     config = load_config()
 
     if command == "all":
-        print("=== Step 1: Ingest ===")
-        _import_step("ingest").run(config)
-        print("=== Step 2: Forecast ===")
-        _import_step("forecast").run(config)
-        print("=== Step 3: Process (merge + analyze + fill) ===")
-        _import_step("process").run(config)
-        print("=== Step 4: Train ===")
-        _import_step("train").run(config)
-        print("=== Step 5: Evaluate ===")
-        _import_step("evaluate").run(config)
+        for i, name in enumerate(_STEP_ORDER, 1):
+            step_label = _STEP_LABELS.get(name, name)
+            print(f"=== Step {i}: {step_label} ===")
+            _import_step(name).run(config)
         print("=== Pipeline complete ===")
     else:
         _import_step(command).run(config)

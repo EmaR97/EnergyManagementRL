@@ -46,13 +46,17 @@ def load_config(config_path: str | None = None) -> dict:
 
 
 def _resolve_data_paths(config: dict, config_dir: Path):
-    base = config.get("data_paths", {}).get("base", "../data")
-    (config_dir / base).resolve()
-    for key, value in config.get("data_paths", {}).items():
+    data_paths = config.get("data_paths")
+    if data_paths is None:
+        return
+    base = data_paths.get("base", "../data")
+    if not os.path.isabs(base):
+        data_paths["base"] = str((config_dir / base).resolve())
+    for key, value in data_paths.items():
         if key == "base":
             continue
         if isinstance(value, str) and not os.path.isabs(value):
-            config["data_paths"][key] = str((config_dir / value).resolve())
+            data_paths[key] = str((config_dir / value).resolve())
 
 
 def get_env(name: str, required: bool = False) -> str:

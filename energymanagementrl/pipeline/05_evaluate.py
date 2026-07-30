@@ -1,9 +1,8 @@
 import os
 
-import numpy as np
 import pandas as pd
 
-from .config import START_DATE
+from .builders import load_and_prepare_data, build_simulation_stack, get_full_period
 
 from ..utility import get_logger
 
@@ -13,54 +12,15 @@ logger = get_logger(__name__)
 def run(config: dict):
     logger.info("Starting model evaluation")
 
-    data_dir = config["data_paths"].get("simulation_inputs", "../data/simulation_inputs")
     logs_dir = config["data_paths"].get("logs", "../data/logs")
     trained_dir = config["data_paths"].get("trained_models", "../data/trained_models")
-    num_panels = config["solar_plant"]["num_panels"]
 
-    input_file = os.path.join(data_dir, f"complete_series.{num_panels}_panels.csv")
-    df = pd.read_csv(input_file, parse_dates=["index"], index_col=["index"])
-    if "GRID_VOLTAGE" in df.columns:
-        df.rename(columns={"GRID_VOLTAGE": "grid_voltage"}, inplace=True)
+    df = load_and_prepare_data(config)
+    _, _, _, _, i_sim = build_simulation_stack(config, df)
+    full_period = get_full_period(df)
 
-    df["production_power_kw_altered"] = np.where(
-        df["SOC"] < 100, df["production_power_kw"], df["production_power_kw_weather_dependent"]
-    )
-    df = df[df.index > pd.Timestamp(START_DATE)]
-
-    production_w = df.production_power_kw_altered * 1000
-    production_w_weather = df.production_power_kw_weather_dependent * 1000
-    optimal_w = df.production_power_kw_optimal * 1000
-    consumption_w = -df.load_power_kw * 1000
-    grid_voltage = df.grid_voltage
-
-    from ..simulation import (
-        ProductionSimFromReal,
-        ConsumptionSim,
-        BatterySim,
-        GridSim,
-        InverterSim,
-    )
     from ..rl.env import InverterEnv
     from ..rl.models import GreedyModel, ConservativeModel
-
-    p_sim = ProductionSimFromReal(
-        power_series=production_w,
-        optimal_power_series=optimal_w,
-        weather_power_series=production_w_weather,
-        forecast_steps=48,
-    )
-    c_sim = ConsumptionSim(power_series=consumption_w, daily_sample=6, forecast_steps=12)
-    b_sim = BatterySim(**config["battery"])
-    g_sim = GridSim(
-        **{k: v for k, v in config["grid"].items() if k != "energy_price_sell_per_kwh" and k != "energy_price_buy_per_kwh"},
-        energy_price_sell_per_kwh=config["grid"]["energy_price_sell_per_kwh"] / 1000,
-        energy_price_buy_per_kwh=config["grid"]["energy_price_buy_per_kwh"] / 1000,
-        voltage_series=grid_voltage,
-    )
-    i_sim = InverterSim(prod_sim=p_sim, cons_sim=c_sim, batt_sim=b_sim, grid_sim=g_sim)
-
-    full_period = min(288 * 7 * 4 * 9, len(df) - 288 * 2)
     env = InverterEnv(i_sim, full_period)
 
     results = {}

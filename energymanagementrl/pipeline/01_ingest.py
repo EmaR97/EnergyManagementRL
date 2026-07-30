@@ -1,9 +1,8 @@
-import os
-
 import numpy as np
 import pandas as pd
 
 from .config import get_env
+from .io import save_with_suffix
 
 from ..utility import get_logger
 
@@ -37,7 +36,6 @@ def run(config: dict):
     )
 
     data_dir = config["data_paths"].get("simulation_inputs", "../data/simulation_inputs")
-    os.makedirs(data_dir, exist_ok=True)
 
     final_clean = final_history.dropna()
     raw_clean = raw_history.loc[final_clean.index]
@@ -46,17 +44,14 @@ def run(config: dict):
     date_end = final_clean.index.max().strftime("%Y%m%d")
     suffix = f"{date_start}_{date_end}"
 
-    raw_clean.replace([np.inf, -np.inf], np.nan).to_csv(
-        os.path.join(data_dir, f"plant_history_raw.{suffix}.csv"), index_label="timestamp"
+    clean_kwargs = {"index_label": "timestamp"}
+    save_with_suffix(
+        raw_clean.replace([np.inf, -np.inf], np.nan),
+        data_dir, "plant_history_raw", suffix, **clean_kwargs,
     )
-    final_clean.replace([np.inf, -np.inf], np.nan).to_csv(
-        os.path.join(data_dir, f"plant_history.{suffix}.csv"), index_label="timestamp"
-    )
-    raw_clean.replace([np.inf, -np.inf], np.nan).to_csv(
-        os.path.join(data_dir, "plant_history_raw.csv"), index_label="timestamp"
-    )
-    final_clean.replace([np.inf, -np.inf], np.nan).to_csv(
-        os.path.join(data_dir, "plant_history.csv"), index_label="timestamp"
+    save_with_suffix(
+        final_clean.replace([np.inf, -np.inf], np.nan),
+        data_dir, "plant_history", suffix, **clean_kwargs,
     )
     logger.info(f"Ingested data saved with suffix {suffix}")
 

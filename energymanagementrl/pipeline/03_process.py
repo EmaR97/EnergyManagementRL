@@ -1,15 +1,15 @@
-import os
-from collections import Counter
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from .gaps import generate_gap_report, DAY
+from .io import save_with_suffix
+from .viz import plot_gap_fills
+
 from ..utility import get_logger
 
 logger = get_logger(__name__)
-
-DAY = 288  # timesteps per day (5-min intervals)
 
 
 def _fill_gap_with_pattern(col: pd.Series, num_days: int = 3) -> pd.Series:
@@ -55,48 +55,6 @@ def _fill_gap_with_pattern(col: pd.Series, num_days: int = 3) -> pd.Series:
                 result.iloc[j] = np.mean(vals)
 
     return result
-
-
-def _gap_report(df: pd.DataFrame):
-    """Log a detailed gap analysis deduplicated across columns."""
-    n_nan_total = df.isna().sum().sum()
-    if n_nan_total == 0:
-        logger.info("No missing values found")
-        return
-
-    logger.info(f"Total NaN cells: {n_nan_total}")
-    for col in df.columns:
-        n = df[col].isna().sum()
-        if n:
-            pct = n / len(df) * 100
-            logger.info(f"  {col}: {n} NaN ({pct:.2f}%)")
-
-    any_nan = df.isna().any(axis=1)
-    gaps = []
-    start = None
-    for i, is_nan in enumerate(any_nan):
-        if is_nan and start is None:
-            start = i
-        elif not is_nan and start is not None:
-            gaps.append((df.index[start], df.index[i - 1], i - start))
-            start = None
-    if start is not None:
-        gaps.append((df.index[start], df.index[-1], len(df) - start))
-
-    logger.info(f"Total gap blocks: {len(gaps)}")
-    if not gaps:
-        return
-
-    dist = Counter(g[2] for g in gaps)
-    logger.info("Gap size distribution:")
-    for size, count in sorted(dist.items(), key=lambda x: -x[1])[:10]:
-        days = size / DAY
-        logger.info(f"  {size:>5} rows ({days:.2f} days): {count} occurrences")
-
-    logger.info("10 largest gaps:")
-    for frm, to, length in sorted(gaps, key=lambda g: -g[2])[:10]:
-        days = length / DAY
-        logger.info(f"  {frm:%Y-%m-%d %H:%M}  →  {to:%Y-%m-%d %H:%M}  ({length} rows, {days:.2f} days)")
 
 
 def _simulate_battery_through_gaps(df, config):
@@ -161,7 +119,7 @@ def _simulate_battery_through_gaps(df, config):
                     # 2. feed remaining surplus to grid (acceptance-limited)
                     grid_feed_kw = _interact_with_grid(acceptance_kw, charge_kw, net_kw)
 
-                    grid_kw, soc_pct, stored_kw = method_name(capacity_kwh, grid_feed_kw, soc_kwh, -charge_kw)
+                    grid_kw, soc_pct, stored_kw = _compute_soc_metrics(capacity_kwh, grid_feed_kw, soc_kwh, -charge_kw)
 
                 elif net_kw < 0:
                     # 1. discharge battery
@@ -170,10 +128,10 @@ def _simulate_battery_through_gaps(df, config):
                     # 2. remaining deficit from grid (import-limited)
                     grid_take_kw = _interact_with_grid(max_taken_kw, discharge_kw, deficit_kw)
 
-                    grid_kw, soc_pct, stored_kw = method_name(capacity_kwh, -grid_take_kw, soc_kwh, discharge_kw)
+                    grid_kw, soc_pct, stored_kw = _compute_soc_metrics(capacity_kwh, -grid_take_kw, soc_kwh, discharge_kw)
 
                 else:
-                    grid_kw, soc_pct, stored_kw = method_name(capacity_kwh, 0.0, soc_kwh, 0.0)
+                    grid_kw, soc_pct, stored_kw = _compute_soc_metrics(capacity_kwh, 0.0, soc_kwh, 0.0)
 
                 result.iloc[j, result.columns.get_loc("SOC")] = soc_pct
                 result.iloc[j, result.columns.get_loc("stored_power_kw")] = stored_kw
@@ -184,8 +142,7 @@ def _simulate_battery_through_gaps(df, config):
     return result
 
 
-def method_name(capacity_kwh: Any, grid_kw: float, soc_kwh: Any | int | float | Any, stored_kw: float) -> \
-        tuple[Any, float, float]:
+def _compute_soc_metrics(capacity_kwh: float, grid_kw: float, soc_kwh: float, stored_kw: float) -> tuple[float, float, float]:
     soc_pct = soc_kwh / capacity_kwh * 100
     return grid_kw, soc_pct, stored_kw
 
@@ -231,83 +188,6 @@ def _get_grid_acceptance(feed_in_min_kw: Any, j: int, power_per_volt: Any | floa
     return acceptance_kw
 
 
-def _plot_gaps(before: pd.DataFrame, after: pd.DataFrame, config: dict, date_suffix: str = ""):
-    """Plot each large gap with a ±3-day window, comparing before/after fill."""
-    import matplotlib.dates as mdates
-    import matplotlib.pyplot as plt
-
-    plots_dir = os.path.join(
-        config["data_paths"].get("simulation_inputs", "../data/simulation_inputs"), "gap_plots"
-    )
-    if date_suffix:
-        plots_dir = os.path.join(plots_dir, date_suffix)
-    os.makedirs(plots_dir, exist_ok=True)
-
-    any_nan = before.isna().any(axis=1)
-    cols = ["production_power_kw", "load_power_kw", "GRID_VOLTAGE", "SOC", "stored_power_kw", "grid_power_kw"]
-    titles = ["Production (kW)", "Load (kW)", "Voltage (V)", "SOC (%)", "Stored (kW)", "Grid (kW)"]
-    window_days = 3
-    width = max(1, len(str(len(before))))
-
-    pos = 0
-    n = len(before)
-    while pos < n:
-        if not any_nan.iloc[pos]:
-            pos += 1
-            continue
-
-        gap_start = pos
-        while pos < n and any_nan.iloc[pos]:
-            pos += 1
-        gap_end = pos
-
-        if gap_end - gap_start <= 1:
-            continue
-
-        w0 = max(0, gap_start - DAY * window_days)
-        w1 = min(n, gap_end + DAY * window_days)
-        idx = before.index[w0:w1]
-
-        fig, axes = plt.subplots(3, 2, figsize=(16, 10), sharex=True)
-        fig.suptitle(
-            f"Gap  {before.index[gap_start]:%Y-%m-%d %H:%M}  →  {before.index[min(gap_end, n) - 1]:%Y-%m-%d %H:%M}  ({gap_end - gap_start} rows)",
-            fontsize=13,
-        )
-
-        for (ax_grp, col, title) in zip(axes.flatten(), cols, titles):
-            if col not in before.columns:
-                ax_grp.set_visible(False)
-                continue
-            ax_grp.plot(
-                idx, before[col].iloc[w0:w1].values,
-                color="#e74c3c", alpha=0.5, linewidth=0.8, label="Before fill",
-            )
-            ax_grp.plot(
-                idx, after[col].iloc[w0:w1].values,
-                color="#2980b9", alpha=0.8, linewidth=1, label="After fill",
-            )
-            ax_grp.axvspan(before.index[gap_start], before.index[min(gap_end, n) - 1],
-                           alpha=0.12, color="gray")
-            ax_grp.set_ylabel(title, fontsize=9)
-            ax_grp.legend(fontsize=7, loc="upper right")
-            ax_grp.grid(True, alpha=0.25)
-
-        axes[-1, -1].xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
-        fig.autofmt_xdate()
-        plt.tight_layout()
-
-        fname = (
-            f"{gap_end - gap_start:0{width}d}_"
-            f"gap_{before.index[gap_start]:%Y%m%d_%H%M}_"
-            f"{before.index[min(gap_end, n) - 1]:%Y%m%d_%H%M}.png"
-        )
-        fig.savefig(os.path.join(plots_dir, fname), dpi=150)
-        plt.close(fig)
-
-    n_plots = len([f for f in os.listdir(plots_dir) if f.endswith(".png")])
-    logger.info(f"Saved {n_plots} gap-plot(s) to {plots_dir}")
-
-
 def run(config: dict):
     logger.info("Starting data processing and analysis")
 
@@ -315,10 +195,10 @@ def run(config: dict):
     data_dir = config["data_paths"].get("simulation_inputs", "../data/simulation_inputs")
 
     plant_history = pd.read_csv(
-        os.path.join(data_dir, "plant_history.csv"), index_col="timestamp", parse_dates=True
+        f"{data_dir}/plant_history.csv", index_col="timestamp", parse_dates=True
     )
     forecasts = pd.read_csv(
-        os.path.join(data_dir, f"forecasts.{num_panels}_panels.csv"), index_col="timestamp", parse_dates=True
+        f"{data_dir}/forecasts.{num_panels}_panels.csv", index_col="timestamp", parse_dates=True
     )
 
     start = max(plant_history.index.min(), forecasts.index.min())
@@ -345,7 +225,7 @@ def run(config: dict):
     if "load_power_kw" in complete.columns:
         logger.info(f"Total consumption: {complete.load_power_kw.abs().sum():.2f} kWh")
 
-    _gap_report(complete)
+    generate_gap_report(complete)
 
     n_nan = complete.isna().sum().sum()
 
@@ -357,22 +237,22 @@ def run(config: dict):
         logger.info(f"Filling {n_nan} NaN in merged dataset")
         before_fill = complete.copy()
 
-        # Phase 1: fill small gaps with interpolation, then replace full days containing any remaining NaN
         for col in ["production_power_kw", "load_power_kw", "GRID_VOLTAGE"]:
             if col in complete.columns and complete[col].isna().any():
                 complete[col] = complete[col].interpolate(method="linear", limit=12)
                 complete[col] = _fill_gap_with_pattern(complete[col], num_days=3)
 
-        # Phase 2: simulate battery + grid through gaps using filled forcings
         if "SOC" in complete.columns and complete["SOC"].isna().any():
             n_soc = complete["SOC"].isna().sum()
             complete = _simulate_battery_through_gaps(complete, config)
             logger.info(f"  Simulated battery + grid through {n_soc} NaN SOC timesteps")
 
-        _plot_gaps(before_fill, complete, config, date_suffix=suffix)
+        plot_gap_fills(before_fill, complete, config, date_suffix=suffix)
 
-    _gap_report(complete)
+    generate_gap_report(complete)
 
-    complete.to_csv(os.path.join(data_dir, f"complete_series.{num_panels}_panels.{suffix}.csv"), index_label="index")
-    complete.to_csv(os.path.join(data_dir, f"complete_series.{num_panels}_panels.csv"), index_label="index")
+    save_with_suffix(
+        complete, data_dir, f"complete_series.{num_panels}_panels", suffix,
+        index_label="index",
+    )
     logger.info(f"Processed data saved with suffix {suffix}")

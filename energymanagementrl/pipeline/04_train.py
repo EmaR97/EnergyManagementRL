@@ -2,12 +2,12 @@ import copy
 import os
 import time
 
-import numpy as np
 import pandas as pd
 import torch
 
-from .config import START_DATE
+from .builders import load_and_prepare_data, build_simulation_stack, get_full_period
 
+from ..simulation import week
 from ..utility import get_logger
 
 logger = get_logger(__name__)
@@ -34,61 +34,15 @@ def run(config: dict):
 
     logger.info(f"Using device: {train_cfg['device']}")
 
-    data_dir = config["data_paths"].get("simulation_inputs", "../data/simulation_inputs")
     logs_dir = config["data_paths"].get("logs", "../data/logs")
-    num_panels = config["solar_plant"]["num_panels"]
-
     os.makedirs(logs_dir, exist_ok=True)
 
-    logger.info("Loading complete series CSV")
-    input_file = os.path.join(data_dir, f"complete_series.{num_panels}_panels.csv")
-    df = pd.read_csv(input_file, parse_dates=["index"], index_col=["index"])
-    if "GRID_VOLTAGE" in df.columns:
-        df.rename(columns={"GRID_VOLTAGE": "grid_voltage"}, inplace=True)
-
-    logger.info(f"Loaded {len(df)} rows. Preparing data series")
-    df["production_power_kw_altered"] = np.where(
-        df["SOC"] < 100, df["production_power_kw"], df["production_power_kw_weather_dependent"]
-    )
-
-    df = df[df.index > pd.Timestamp(START_DATE)]
+    df = load_and_prepare_data(config)
     df = pd.concat([df, df[-288 * 2:]])
+    p_sim, c_sim, b_sim, g_sim, i_sim = build_simulation_stack(config, df)
+    full_period = get_full_period(df)
 
-    production_w = df.production_power_kw_altered * 1000
-    production_w_weather = df.production_power_kw_weather_dependent * 1000
-    optimal_w = df.production_power_kw_optimal * 1000
-    consumption_w = -df.load_power_kw * 1000
-    grid_voltage = df.grid_voltage
-
-    full_period = min(288 * 7 * 4 * 9, len(df) - 288 * 2)
-
-    from ..simulation import (
-        ProductionSimFromReal,
-        ConsumptionSim,
-        BatterySim,
-        GridSim,
-        InverterSim,
-        week,
-    )
     from ..rl.env import InverterEnvBatteryMgmt
-
-    logger.info("Building simulation stack")
-    p_sim = ProductionSimFromReal(
-        power_series=production_w,
-        optimal_power_series=optimal_w,
-        weather_power_series=production_w_weather,
-        forecast_steps=48,
-    )
-    c_sim = ConsumptionSim(power_series=consumption_w, daily_sample=6, forecast_steps=12)
-    b_sim = BatterySim(**config["battery"])
-    g_sim = GridSim(
-        **{k: v for k, v in config["grid"].items() if
-           k != "energy_price_sell_per_kwh" and k != "energy_price_buy_per_kwh"},
-        energy_price_sell_per_kwh=config["grid"]["energy_price_sell_per_kwh"] / 1000,
-        energy_price_buy_per_kwh=config["grid"]["energy_price_buy_per_kwh"] / 1000,
-        voltage_series=grid_voltage,
-    )
-    i_sim = InverterSim(prod_sim=p_sim, cons_sim=c_sim, batt_sim=b_sim, grid_sim=g_sim)
 
     logger.info("Configuring reward and reserve parameters")
     rewards = train_cfg["rewards"]
@@ -127,32 +81,39 @@ def run(config: dict):
     t_env = SubprocVecEnv([_make_train_env(i) for i in range(num_envs)])
 
     algorithm = train_cfg["algorithm"]
-    logger.info(f"Constructing {algorithm} model")
-    if algorithm == "DQN":
-        model = DQN(
-            train_cfg["policy"],
-            t_env,
-            verbose=0,
-            learning_rate=train_cfg["learning_rate"],
-            batch_size=train_cfg["batch_size"],
-            gradient_steps=train_cfg["gradient_steps"],
-            device=train_cfg["device"],
-        )
-    elif algorithm == "PPO":
-        model = PPO(
-            train_cfg["policy"],
-            t_env,
-            verbose=0,
-            learning_rate=train_cfg["learning_rate"],
-            batch_size=train_cfg["batch_size"],
-            n_steps=train_cfg["n_steps"],
-            n_epochs=train_cfg["n_epochs"],
-            gae_lambda=train_cfg["gae_lambda"],
-            clip_range=train_cfg["clip_range"],
-            device=train_cfg["device"],
-        )
+    load_path = train_cfg.get("load_path")
+
+    if load_path:
+        logger.info(f"Loading model from {load_path} for continued training")
+        model_class = DQN if algorithm == "DQN" else PPO
+        model = model_class.load(load_path, env=t_env)
     else:
-        raise ValueError(f"Unsupported algorithm: {algorithm}")
+        logger.info(f"Constructing {algorithm} model from scratch")
+        if algorithm == "DQN":
+            model = DQN(
+                train_cfg["policy"],
+                t_env,
+                verbose=0,
+                learning_rate=train_cfg["learning_rate"],
+                batch_size=train_cfg["batch_size"],
+                gradient_steps=train_cfg["gradient_steps"],
+                device=train_cfg["device"],
+            )
+        elif algorithm == "PPO":
+            model = PPO(
+                train_cfg["policy"],
+                t_env,
+                verbose=0,
+                learning_rate=train_cfg["learning_rate"],
+                batch_size=train_cfg["batch_size"],
+                n_steps=train_cfg["n_steps"],
+                n_epochs=train_cfg["n_epochs"],
+                gae_lambda=train_cfg["gae_lambda"],
+                clip_range=train_cfg["clip_range"],
+                device=train_cfg["device"],
+            )
+        else:
+            raise ValueError(f"Unsupported algorithm: {algorithm}")
 
     eval_cfg = train_cfg["eval"]
     eval_episode_steps = 288 * eval_cfg["episode_days"]
@@ -202,12 +163,16 @@ def run(config: dict):
     logger.info("Starting model.learn()")
 
     start = time.time()
-    model.learn(total_timesteps=total_timesteps, callback=[eval_callback, checkpoint_callback])
-    elapsed = time.time() - start
-    logger.info(f"Training completed in {elapsed:.1f}s")
-
-    model.save(os.path.join(logs_dir, "final_model"))
-    logger.info(f"Model saved to {logs_dir}/final_model")
-
-    model.save(os.path.join(logs_dir, f"final_model.{suffix}"))
-    logger.info(f"Model saved to {logs_dir}/final_model.{suffix}")
+    try:
+        model.learn(total_timesteps=total_timesteps, callback=[eval_callback, checkpoint_callback])
+    except Exception:
+        logger.warning("Training crashed — saving crashed model before re-raising")
+        model.save(os.path.join(logs_dir, "crashed_model"))
+        raise
+    finally:
+        elapsed = time.time() - start
+        logger.info(f"Training completed in {elapsed:.1f}s")
+        model.save(os.path.join(logs_dir, "final_model"))
+        logger.info(f"Model saved to {logs_dir}/final_model")
+        model.save(os.path.join(logs_dir, f"final_model.{suffix}"))
+        logger.info(f"Model saved to {logs_dir}/final_model.{suffix}")
