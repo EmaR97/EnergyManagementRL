@@ -1,9 +1,8 @@
 import pandas as pd
 
-from .config import get_plant_config
-from .io import save_with_suffix
-
-from ..utility import get_logger
+from ..config import get_env
+from ...production_forecast import PlantConfig
+from ...utility import save_with_suffix, get_logger
 
 logger = get_logger(__name__)
 
@@ -11,7 +10,11 @@ logger = get_logger(__name__)
 def run(config: dict):
     logger.info("Starting forecast generation")
 
-    plant_config = get_plant_config(config)
+    plant_config = PlantConfig.from_config(
+        config["solar_plant"],
+        float(get_env("LAT", required=True)),
+        float(get_env("LON", required=True)),
+    )
     num_panels = config["solar_plant"]["num_panels"]
     data_dir = config["data_paths"].get("simulation_inputs", "../data/simulation_inputs")
 
@@ -22,7 +25,7 @@ def run(config: dict):
     start = plant_history.index.min()
     end = plant_history.index.max()
 
-    from ..production_forecast import EnergyPredictionSystem, OpenMeteoClient, WeatherType
+    from ...production_forecast import EnergyPredictionSystem, OpenMeteoClient, WeatherType
 
     open_meteo_client = OpenMeteoClient()
     energy_prediction = EnergyPredictionSystem(plant_config=plant_config, open_meteo_client=open_meteo_client)

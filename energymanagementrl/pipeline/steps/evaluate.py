@@ -2,9 +2,9 @@ import os
 
 import pandas as pd
 
-from .builders import load_and_prepare_data, build_simulation_stack, get_full_period
+from ..lib.builders import load_and_prepare_data, build_simulation_stack, get_full_period
 
-from ..utility import get_logger
+from ...utility import get_logger
 
 logger = get_logger(__name__)
 
@@ -19,8 +19,8 @@ def run(config: dict):
     _, _, _, _, i_sim = build_simulation_stack(config, df)
     full_period = get_full_period(df)
 
-    from ..rl.env import InverterEnv
-    from ..rl.models import GreedyModel, ConservativeModel
+    from ...rl.env import InverterEnv
+    from ...rl.models import GreedyModel, ConservativeModel
     env = InverterEnv(i_sim, full_period)
 
     results = {}
@@ -46,7 +46,7 @@ def run(config: dict):
     if current_model_path:
         full_path = os.path.join(trained_dir, "models", current_model_path)
         if os.path.exists(full_path):
-            from ..rl.utils import load_model_with_weights
+            from ...rl.utils import load_model_with_weights
 
             model = load_model_with_weights(env, full_path)
             results["current_used"] = _evaluate_model(env, model, full_period, "current_used")
@@ -69,7 +69,7 @@ def _load_rl_model(path, env):
 
 
 def _evaluate_model(env, model, max_steps, name):
-    from ..rl.utils import test_plot
+    from ...rl.utils import test_plot
 
     env.set_max_steps(max_steps)
     score = test_plot(env, model, max_steps, to_show=["batt_sim.stored"], seed=33)

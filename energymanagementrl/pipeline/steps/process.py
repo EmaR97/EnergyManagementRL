@@ -3,59 +3,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .gaps import generate_gap_report, DAY
-from .io import save_with_suffix
-from .viz import plot_gap_fills
+from ..lib.viz import plot_gap_fills
+from ...utility import generate_gap_report, fill_gap_with_pattern, save_with_suffix, DAY, get_logger
 
-from ..utility import get_logger
 
 logger = get_logger(__name__)
-
-
-def _fill_gap_with_pattern(col: pd.Series, num_days: int = 3) -> pd.Series:
-    """Replace full days containing any NaN with the mean of the same step from clean days.
-
-    For each day that has one or more NaN in the original data, the **entire** day
-    (all 288 timesteps) is reconstructed from clean days before and after the gap.
-    This avoids jumps when transitioning from real to filled data mid-day.
-    """
-    n = len(col)
-    gap_days: set[int] = set()
-    for i in range(n):
-        if pd.isna(col.iloc[i]):
-            gap_days.add(i // DAY)
-
-    if not gap_days:
-        return col.copy()
-
-    result = col.copy()
-    for day_idx in sorted(gap_days):
-        day_start = day_idx * DAY
-        day_end = min(day_start + DAY, n)
-
-        for j in range(day_start, day_end):
-            step = j % DAY
-
-            pre = []
-            k = j - DAY
-            while len(pre) < num_days and k >= 0:
-                if (k // DAY) not in gap_days and not pd.isna(col.iloc[k]):
-                    pre.append(col.iloc[k])
-                k -= DAY
-
-            post = []
-            k = j + DAY
-            while len(post) < num_days and k < n:
-                if (k // DAY) not in gap_days and not pd.isna(col.iloc[k]):
-                    post.append(col.iloc[k])
-                k += DAY
-
-            vals = pre + post
-            if vals:
-                result.iloc[j] = np.mean(vals)
-
-    return result
-
 
 def _simulate_battery_through_gaps(df, config):
     """Simulate battery + grid through SOC gaps using filled external forcings.
@@ -240,7 +192,7 @@ def run(config: dict):
         for col in ["production_power_kw", "load_power_kw", "GRID_VOLTAGE"]:
             if col in complete.columns and complete[col].isna().any():
                 complete[col] = complete[col].interpolate(method="linear", limit=12)
-                complete[col] = _fill_gap_with_pattern(complete[col], num_days=3)
+                complete[col] = fill_gap_with_pattern(complete[col], num_days=3)
 
         if "SOC" in complete.columns and complete["SOC"].isna().any():
             n_soc = complete["SOC"].isna().sum()

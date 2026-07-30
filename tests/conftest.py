@@ -194,3 +194,14 @@ def complete_series_df():
     )
     df.index.name = "index"
     return df
+
+
+def pytest_collection_modifyitems(items):
+    for item in items:
+        path = str(item.fspath)
+        if "/unit/" in path:
+            item.add_marker(pytest.mark.run(order=0))
+        elif "/integration/" in path:
+            item.add_marker(pytest.mark.run(order=2))
+        else:
+            item.add_marker(pytest.mark.run(order=1))

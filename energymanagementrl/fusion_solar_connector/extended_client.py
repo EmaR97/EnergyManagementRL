@@ -4,7 +4,6 @@ from typing import List, Union
 
 from fusion_solar_py.client import FusionSolarClient, logged_in
 from fusion_solar_py.exceptions import FusionSolarException
-from tornado.gen import sleep
 
 
 class FusionSolarExceptionExtended(FusionSolarException):
@@ -37,7 +36,7 @@ class FusionSolarClientExtended(FusionSolarClient):
             except FusionSolarException as e:
                 if not e.args or e.args[0] != "Failed to reset session and login again.":
                     raise
-                sleep(backoff_factor)
+                time.sleep(backoff_factor)
         raise RuntimeError("keep_alive failed after multiple attempts.")
 
     @logged_in

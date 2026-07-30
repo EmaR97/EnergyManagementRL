@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 import numpy as np
 import pandas as pd
 
-from energymanagementrl.pipeline.config import get_plant_config
+from energymanagementrl.production_forecast import PlantConfig
 
 
 class TestFusionSolarClient:
@@ -19,10 +19,8 @@ class TestFusionSolarClient:
         assert BatteryWorkingMode.MAXIMUM_SELF_CONSUMPTION.value == 2
         assert BatteryWorkingMode.FULLY_FEED_TO_GRID.value == 4
 
-    def test_config_builds_plant_config(self, sample_config, monkeypatch):
-        monkeypatch.setenv("LAT", "45.0")
-        monkeypatch.setenv("LON", "9.0")
-        plant = get_plant_config(sample_config)
+    def test_config_builds_plant_config(self, sample_config):
+        plant = PlantConfig.from_config(sample_config["solar_plant"], 45.0, 9.0)
         system = plant.setup_pv_system()
         assert system is not None
         assert len(system.arrays) == 2

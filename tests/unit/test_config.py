@@ -2,7 +2,9 @@ import json
 
 import pytest
 
-from energymanagementrl.pipeline.config import load_config, get_env, get_plant_config, get_simulation_params
+from energymanagementrl.pipeline.config import load_config, get_env
+from energymanagementrl.production_forecast import PlantConfig
+from energymanagementrl.simulation import get_simulation_params
 
 
 class TestLoadConfig:
@@ -44,10 +46,8 @@ class TestGetEnv:
 
 
 class TestGetPlantConfig:
-    def test_builds_plant_config(self, sample_config, monkeypatch):
-        monkeypatch.setenv("LAT", "45.0")
-        monkeypatch.setenv("LON", "9.0")
-        plant = get_plant_config(sample_config)
+    def test_builds_plant_config(self, sample_config):
+        plant = PlantConfig.from_config(sample_config["solar_plant"], 45.0, 9.0)
         assert plant.latitude == 45.0
         assert plant.longitude == 9.0
         assert len(plant.arrays) == 2

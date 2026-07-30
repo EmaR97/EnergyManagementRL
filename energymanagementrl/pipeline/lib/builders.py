@@ -3,9 +3,9 @@ import os
 import numpy as np
 import pandas as pd
 
-from .config import START_DATE
+from ..config import START_DATE
 
-from ..utility import get_logger
+from ...utility import get_logger
 
 logger = get_logger(__name__)
 
@@ -31,7 +31,7 @@ def load_and_prepare_data(config: dict) -> pd.DataFrame:
 
 
 def build_simulation_stack(config: dict, df: pd.DataFrame):
-    from ..simulation import (
+    from ...simulation import (
         BatterySim,
         ConsumptionSim,
         GridSim,

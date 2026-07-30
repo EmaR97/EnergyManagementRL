@@ -5,8 +5,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from ..production_forecast import PanelModel, ArrayConfig, PlantConfig
-
 
 ENERGY_MGMT_CONFIG_ENV = "ENERGY_MGMT_CONFIG"
 
@@ -64,35 +62,4 @@ def get_env(name: str, required: bool = False) -> str:
     if required and value is None:
         raise EnvironmentError(f"Required environment variable not set: {name}")
     return value
-
-
-def get_plant_config(config: dict) -> PlantConfig:
-    plant_cfg = config["solar_plant"]
-    panel_model = PanelModel(**plant_cfg["panel_model"])
-    num_panels = plant_cfg["num_panels"]
-    arrays = [
-        ArrayConfig(
-            name=a["name"],
-            panel_model=panel_model,
-            num_panels=num_panels,
-            tilt_angle=a["tilt_angle"],
-            azimuth=a["azimuth"],
-        )
-        for a in plant_cfg["arrays"]
-    ]
-    return PlantConfig(
-        latitude=float(get_env("LAT", required=True)),
-        longitude=float(get_env("LON", required=True)),
-        timezone=plant_cfg["timezone"],
-        inverter_pdc0=plant_cfg["inverter"]["pdc0"],
-        arrays=arrays,
-    )
-
-
-def get_simulation_params(config: dict) -> dict:
-    return {
-        "battery": config["battery"],
-        "grid": config["grid"],
-        "simulation": config["simulation"],
-    }
 

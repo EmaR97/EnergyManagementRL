@@ -3,24 +3,28 @@ import os
 
 import numpy as np
 
-from ..utility import get_logger
+from ...utility import get_logger
 
 logger = get_logger('DEPLOY')
 
 def run(config: dict):
     logger.info("Starting deployment")
 
-    from .config import get_env, get_plant_config
-    from ..production_forecast import EnergyPredictionSystem, OpenMeteoClient
-    from ..fusion_solar_connector import FusionSolarClientParsed, PeriodicTask
-    from ..rl import load_model_with_weights
-    from ..rl.real_system_interaction import EnergyManagementSystem
-    from ..interface import TelegramBot
+    from ..config import get_env
+    from ...production_forecast import EnergyPredictionSystem, OpenMeteoClient, PlantConfig
+    from ...fusion_solar_connector import FusionSolarClientParsed, PeriodicTask
+    from ...rl import load_model_with_weights
+    from ...rl.real_system_interaction import EnergyManagementSystem
+    from ...interface import TelegramBot
 
     import gymnasium as gym
     from gymnasium import spaces
 
-    plant_config = get_plant_config(config)
+    plant_config = PlantConfig.from_config(
+        config["solar_plant"],
+        float(get_env("LAT", required=True)),
+        float(get_env("LON", required=True)),
+    )
     production_forecaster = EnergyPredictionSystem(
         plant_config=plant_config, open_meteo_client=OpenMeteoClient()
     )

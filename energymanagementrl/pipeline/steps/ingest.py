@@ -1,10 +1,10 @@
 import numpy as np
 import pandas as pd
 
-from .config import get_env
-from .io import save_with_suffix
+from ..config import get_env
+from ...utility import save_with_suffix
 
-from ..utility import get_logger
+from ...utility import get_logger
 
 logger = get_logger(__name__)
 
@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 def run(config: dict):
     logger.info("Starting data ingestion from FusionSolar API")
 
-    from ..fusion_solar_connector import FusionSolarClientParsed
+    from ...fusion_solar_connector import FusionSolarClientParsed
 
     username = get_env("FUSION_SOLAR_CLIENT_USERNAME", required=True)
     password = get_env("FUSION_SOLAR_CLIENT_PASSWORD", required=True)
@@ -58,7 +58,7 @@ def run(config: dict):
 
 def ingest_fusion_solar(config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
     """High-level interface for programmatic use."""
-    from ..fusion_solar_connector import FusionSolarClientParsed
+    from ...fusion_solar_connector import FusionSolarClientParsed
 
     username = get_env("FUSION_SOLAR_CLIENT_USERNAME", required=True)
     password = get_env("FUSION_SOLAR_CLIENT_PASSWORD", required=True)

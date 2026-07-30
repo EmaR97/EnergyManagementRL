@@ -59,6 +59,28 @@ class PlantConfig:
         self.inverter_pdc0 = inverter_pdc0
         self.arrays = arrays
 
+    @classmethod
+    def from_config(cls, plant_cfg: dict, latitude: float, longitude: float) -> "PlantConfig":
+        panel_model = PanelModel(**plant_cfg["panel_model"])
+        num_panels = plant_cfg["num_panels"]
+        arrays = [
+            ArrayConfig(
+                name=a["name"],
+                panel_model=panel_model,
+                num_panels=num_panels,
+                tilt_angle=a["tilt_angle"],
+                azimuth=a["azimuth"],
+            )
+            for a in plant_cfg["arrays"]
+        ]
+        return cls(
+            latitude=latitude,
+            longitude=longitude,
+            timezone=plant_cfg["timezone"],
+            inverter_pdc0=plant_cfg["inverter"]["pdc0"],
+            arrays=arrays,
+        )
+
     def setup_pv_system(
             self
     ) -> pvsystem.PVSystem:

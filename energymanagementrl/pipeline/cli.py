@@ -6,13 +6,13 @@ from energymanagementrl.pipeline.config import load_config
 
 _STEP_MODULES = {
     "all": "all",
-    "ingest": "01_ingest",
-    "forecast": "02_forecast",
-    "process": "03_process",
-    "train": "04_train",
-    "evaluate": "05_evaluate",
-    "deploy": "06_deploy",
-    "monitor": "07_monitor",
+    "ingest": "ingest",
+    "forecast": "forecast",
+    "process": "process",
+    "train": "train",
+    "evaluate": "evaluate",
+    "deploy": "deploy",
+    "monitor": "monitor",
 }
 
 _STEP_LABELS = {
@@ -30,7 +30,7 @@ _STEP_ORDER = ["ingest", "forecast", "process", "train", "evaluate", "deploy", "
 
 
 def _import_step(name):
-    return importlib.import_module(f"energymanagementrl.pipeline.{_STEP_MODULES[name]}")
+    return importlib.import_module(f"energymanagementrl.pipeline.steps.{_STEP_MODULES[name]}")
 
 
 def _show_menu():
