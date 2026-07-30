@@ -1,4 +1,3 @@
-import logging
 import os
 from collections import Counter
 from typing import Any
@@ -6,7 +5,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-logger = logging.getLogger(__name__)
+from ..utility import get_logger
+
+logger = get_logger(__name__)
 
 DAY = 288  # timesteps per day (5-min intervals)
 

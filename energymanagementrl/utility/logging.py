@@ -17,5 +17,6 @@ def get_logger(name, lvl=logging.INFO):
     if not info_logger.handlers:
         info_logger.addHandler(console_handler)
         info_logger.addHandler(file_handler)
+        info_logger.propagate = False
 
     return info_logger

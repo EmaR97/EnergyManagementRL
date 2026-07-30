@@ -1,16 +1,20 @@
+import sys
 import threading
 import time
-import sys
+from logging import Logger
+
+from utility import get_logger, logging
 
 
 class PeriodicTask:
-    def __init__(self, task_function, interval=60):
+    def __init__(self, task_function, interval=60, logger: Logger=None):
         """
         Initializes the PeriodicTask object.
 
         :param task_function: The function to call periodically.
         :param interval: Time interval between calls (in seconds).
         """
+        self.logger = logger or get_logger(self.__class__.__name__, logging.WARNING)
         self.task_function = task_function
         self.interval = interval
         self._stop_event = threading.Event()
@@ -22,27 +26,27 @@ class PeriodicTask:
                 self.task_function()
                 time.sleep(self.interval)
         except Exception as e:
-            print(f"Unhandled exception in task: {e}", file=sys.stderr)
+            self.logger.exception("Unhandled exception in task: %s", e)
         finally:
-            self._stop_event.set()  # Ensure the stop event is set to signal task completion.
-            print("Task loop exited.")
+            self._stop_event.set()
+            self.logger.info("Task loop exited.")
 
     def start(self):
         if self._task_thread and self._task_thread.is_alive():
-            print("Periodic task already running.")
+            self.logger.warning("Periodic task already running.")
             return
         self._stop_event.clear()
         self._task_thread = threading.Thread(target=self._task_loop, daemon=True)
         self._task_thread.start()
-        print("Periodic task started.")
+        self.logger.info("Periodic task started.")
 
     def stop(self):
         if not self._task_thread or not self._task_thread.is_alive():
-            print("No periodic task to stop.")
+            self.logger.warning("No periodic task to stop.")
             return
         self._stop_event.set()
-        self._task_thread.join()  # Safely wait for the thread to finish.
-        print("Periodic task stopped.")
+        self._task_thread.join()
+        self.logger.info("Periodic task stopped.")
 
 
 if __name__ == "__main__":

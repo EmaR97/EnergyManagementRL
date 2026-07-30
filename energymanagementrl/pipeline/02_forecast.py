@@ -1,11 +1,12 @@
-import logging
 import os
 
 import pandas as pd
 
 from .config import get_plant_config
 
-logger = logging.getLogger(__name__)
+from ..utility import get_logger
+
+logger = get_logger(__name__)
 
 
 def run(config: dict):

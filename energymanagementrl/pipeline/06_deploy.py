@@ -1,16 +1,16 @@
-import logging
+import asyncio
 import os
 
 import numpy as np
 
-logger = logging.getLogger(__name__)
+from ..utility import get_logger
 
+logger = get_logger('DEPLOY')
 
 def run(config: dict):
     logger.info("Starting deployment")
 
     from .config import get_env, get_plant_config
-    from ..utility import get_logger
     from ..production_forecast import EnergyPredictionSystem, OpenMeteoClient
     from ..fusion_solar_connector import FusionSolarClientParsed, PeriodicTask
     from ..rl import load_model_with_weights
@@ -32,7 +32,9 @@ def run(config: dict):
     client = FusionSolarClientParsed(
         username, password, huawei_subdomain=plant_cfg["inverter"]["huawei_subdomain"]
     )
-    periodic_task = PeriodicTask(client.keep_alive)
+    logger_esm = get_logger("ESM")
+
+    periodic_task = PeriodicTask(client.keep_alive,logger=logger_esm)
     periodic_task.start()
     plant_id = client.get_plant_ids()[0]
     battery_id = client.get_battery_ids(plant_id)[0]
@@ -48,7 +50,6 @@ def run(config: dict):
     )
     model = load_model_with_weights(env, model_path)
 
-    logger_esm = get_logger("ESM")
     system = EnergyManagementSystem(
         client=client,
         plant_id=plant_id,
@@ -64,16 +65,21 @@ def run(config: dict):
 
     bot = TelegramBot(system=system, token=token, allowed_users=[admin_id], logger=logger_tb)
 
-    import asyncio
-    import nest_asyncio
+    async def _deploy():
+        await bot.app.initialize()
+        await bot.app.start()
+        await bot.app.updater.start_polling()
+        await bot.set_bot_commands()
+        try:
+            await system.control_loop()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await bot.app.updater.stop()
+            await bot.app.stop()
+            await bot.app.shutdown()
 
-    nest_asyncio.apply()
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(bot.set_bot_commands())
-    import threading
-
-    async def run_control_loop():
-        await system.control_loop()
-
-    threading.Thread(target=lambda: asyncio.run(run_control_loop())).start()
-    loop.run_until_complete(bot.run())
+    try:
+        asyncio.run(_deploy())
+    except KeyboardInterrupt:
+        pass

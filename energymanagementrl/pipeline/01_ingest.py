@@ -1,4 +1,3 @@
-import logging
 import os
 
 import numpy as np
@@ -6,7 +5,9 @@ import pandas as pd
 
 from .config import get_env
 
-logger = logging.getLogger(__name__)
+from ..utility import get_logger
+
+logger = get_logger(__name__)
 
 
 def run(config: dict):

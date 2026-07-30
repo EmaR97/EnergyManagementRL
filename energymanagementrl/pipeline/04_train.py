@@ -1,5 +1,4 @@
 import copy
-import logging
 import os
 import time
 
@@ -9,7 +8,9 @@ import torch
 
 from .config import START_DATE
 
-logger = logging.getLogger(__name__)
+from ..utility import get_logger
+
+logger = get_logger(__name__)
 
 
 def run(config: dict):
