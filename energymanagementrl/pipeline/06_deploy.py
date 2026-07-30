@@ -65,9 +65,15 @@ def run(config: dict):
     bot = TelegramBot(system=system, token=token, allowed_users=[admin_id], logger=logger_tb)
 
     import asyncio
+    import nest_asyncio
 
-    async def _run():
-        await bot.set_bot_commands()
-        await bot.run()
+    nest_asyncio.apply()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(bot.set_bot_commands())
+    import threading
 
-    asyncio.run(_run())
+    async def run_control_loop():
+        await system.control_loop()
+
+    threading.Thread(target=lambda: asyncio.run(run_control_loop())).start()
+    loop.run_until_complete(bot.run())

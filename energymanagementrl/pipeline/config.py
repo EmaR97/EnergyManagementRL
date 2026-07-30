@@ -10,6 +10,7 @@ from ..production_forecast import PanelModel, ArrayConfig, PlantConfig
 
 ENERGY_MGMT_CONFIG_ENV = "ENERGY_MGMT_CONFIG"
 
+START_DATE = "2024-10-19"
 
 def _configure_logging(log_level: str):
     level = getattr(logging, log_level.upper(), logging.INFO)
