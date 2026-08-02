@@ -179,6 +179,7 @@ class InverterEnvBatteryMgmt(InverterEnv):
             night_reserver: float = .9,
             near_full: float = .98,
             min_reserve: float = .1,
+            shaping_scale: float = 1.0,
     ):
         super().__init__(
             inverter_sim,
@@ -191,6 +192,7 @@ class InverterEnvBatteryMgmt(InverterEnv):
         self.night_reserver = night_reserver
         self.near_full = near_full
         self.min_reserve = min_reserve
+        self.shaping_scale = shaping_scale
 
     def set_reward(self) -> float:
         """
@@ -215,7 +217,7 @@ class InverterEnvBatteryMgmt(InverterEnv):
         # If there is no forecasted production in this timeframe and the last action was discharging,
         # it indicates premature battery use, so a penalty is applied.
         if (not any(state > 0 for state in self.state[1:4])) and self.last_action == 0:
-            self.reward -= self.penalty_early_discharge
+            self.reward -= self.penalty_early_discharge * self.shaping_scale
 
         # Calculate the State of Charge (SOC) of the battery
         soc = self.inverter_sim.batt_sim.current_charge / self.inverter_sim.batt_sim.capacity
@@ -224,9 +226,9 @@ class InverterEnvBatteryMgmt(InverterEnv):
         # Apply penalties or rewards based on the battery's SOC to optimize usage for the next cycle
         if self.state[0] > 0 and self.state[1] == 0:
             if soc < self.night_reserver:  # Penalize if SOC is too low to ensure enough reserve for night consumption
-                self.reward -= self.penalty_below_night_reserve
+                self.reward -= self.penalty_below_night_reserve * self.shaping_scale
             elif soc < self.near_full:  # Reward maintaining a near-full SOC for efficient utilization
-                self.reward += self.reward_near_full
+                self.reward += self.reward_near_full * self.shaping_scale
         if soc < self.min_reserve:
-            self.reward -= self.penalty_below_min_reserve
+            self.reward -= self.penalty_below_min_reserve * self.shaping_scale
         return self.reward

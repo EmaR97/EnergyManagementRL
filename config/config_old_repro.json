@@ -1,0 +1,145 @@
+{
+    "log_level": "INFO",
+    "env_required": [
+        "LAT",
+        "LON",
+        "FUSION_SOLAR_CLIENT_USERNAME",
+        "FUSION_SOLAR_CLIENT_PASSWORD",
+        "NIXTLA_API_KEY",
+        "TELEGRAM_BOT_TOKEN_TEST",
+        "TELEGRAM_ID",
+        "KAGGLE_USERNAME",
+        "KAGGLE_KEY",
+        "GOOGLE_APP_SCRIPT_LOGGER_URL"
+    ],
+    "solar_plant": {
+        "timezone": "Europe/Rome",
+        "panel_model": {
+            "pdc0": 0.42,
+            "temp_model_a": -3.56,
+            "temp_model_b": -0.075,
+            "delta_t": 3,
+            "gamma_pdc": -0.004
+        },
+        "num_panels": 14,
+        "arrays": [
+            {
+                "name": "sud_east",
+                "tilt_angle": 25,
+                "azimuth": 110
+            },
+            {
+                "name": "nord_west",
+                "tilt_angle": 18,
+                "azimuth": 290
+            }
+        ],
+        "inverter": {
+            "pdc0": 6,
+            "id": "NE=150331722",
+            "huawei_subdomain": "uni004eu5"
+        }
+    },
+    "battery": {
+        "max_charge_rate": 5000,
+        "max_discharge_rate": 5000,
+        "capacity": 9000,
+        "battery_wear_rate": 0
+    },
+    "grid": {
+        "feed_in_max": 3500,
+        "feed_in_min": 0,
+        "voltage_max": 250,
+        "voltage_min": 230,
+        "max_taken_from": 6000,
+        "energy_price_sell_per_kwh": 0.1,
+        "energy_price_buy_per_kwh": 0.4
+    },
+    "simulation": {
+        "timesteps_per_day": 288,
+        "interval_minutes": 5,
+        "forecast_steps": {
+            "production": 48,
+            "consumption": 12
+        },
+        "daily_sample": 6
+    },
+    "training": {
+        "algorithm": "DQN",
+        "policy": "MlpPolicy",
+        "device": "cpu",
+        "learning_rate": 0.0003,
+        "batch_size": 2048,
+        "num_envs": 8,
+        "train_periods": 1000,
+        "shuffle": 2,
+        "gradient_steps": 1,
+        "anneal_shaping": false,
+        "buffer_size": 1000000,
+        "learning_starts": 100000,
+        "target_update_interval": 10000,
+        "tau": 1.0,
+        "exploration_fraction": 0.1,
+        "exploration_initial_eps": 1.0,
+        "exploration_final_eps": 0.05,
+        "rewards": {
+            "energy_price_buy_per_kwh": 1.0,
+            "reward_near_full": 0.06,
+            "penalty_below_night_reserve": 0.06,
+            "penalty_below_min_reserve": 0.02
+        },
+        "battery_reserves": {
+            "min_reserve": 0.1,
+            "night_reserver": 0.85,
+            "near_full": 0.98
+        },
+        "checkpoint": {
+            "save_freq": 50000,
+            "save_replay_buffer": true,
+            "save_vecnormalize": true,
+            "name_prefix": "latest_model"
+        },
+        "eval": {
+            "eval_freq_multiplier": 10,
+            "num_envs": 1,
+            "episode_days": 252,
+            "baseline": "conservative",
+            "normalize_vs_baseline": true,
+            "use_raw_env": true,
+            "rotate_episodes": false
+        }
+    },
+    "kaggle": {
+        "datasets": {
+            "simulation_inputs": "emanuelerapisarda/simulation-inputs",
+            "trained_models": "emanuelerapisarda/reinforcement-learning-inverter-trained-models"
+        },
+        "sheet_key": "kaggle"
+    },
+    "data_paths": {
+        "base": "../data",
+        "simulation_inputs": "../data/simulation-inputs",
+        "trained_models": "../data/trained_models",
+        "logs": "../data/logs",
+        "complete_series": "../data/complete_series.csv",
+        "input_series_filename": "complete_series.14panels.csv",
+        "grid_voltage_source": "complete_series.ex.12kw.csv",
+        "log_file": "../notebooks/.log"
+    },
+    "models": {
+        "current_used": "dqn_1.0_0.06_0.06_0.02_1000_l_2.policy_weights.pth"
+    },
+    "nixtla": {
+        "model": "timegpt-1",
+        "finetune_steps": 10,
+        "finetune_depth": 5,
+        "confidence_levels": [90, 99]
+    },
+    "data_exploration": {
+        "smoothing_sigma_raw": 12,
+        "smoothing_sigma_forecast": 2,
+        "context_length_days": 7,
+        "forecast_horizon_hours": 24,
+        "resample_frequency": "1H"
+    }
+}

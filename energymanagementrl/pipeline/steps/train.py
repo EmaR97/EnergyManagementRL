@@ -2,8 +2,10 @@ import copy
 import os
 import time
 
+import numpy as np
 import pandas as pd
 import torch
+from gymnasium import Wrapper
 
 from ..lib.builders import load_and_prepare_data, build_simulation_stack, get_full_period
 
@@ -42,7 +44,8 @@ def run(config: dict):
     p_sim, c_sim, b_sim, g_sim, i_sim = build_simulation_stack(config, df)
     full_period = get_full_period(df)
 
-    from ...rl.env import InverterEnvBatteryMgmt
+    from ...rl.env import InverterEnv, InverterEnvBatteryMgmt
+    from ...rl.models import ConservativeModel, GreedyModel
 
     logger.info("Configuring reward and reserve parameters")
     rewards = train_cfg["rewards"]
@@ -63,11 +66,72 @@ def run(config: dict):
     train_env.inverter_sim.grid_sim.energy_price_buy = rewards["energy_price_buy_per_kwh"] / 1000
 
     from stable_baselines3 import DQN, PPO
-    from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
+    from stable_baselines3.common.callbacks import BaseCallback, EvalCallback, CheckpointCallback
     from stable_baselines3.common.vec_env import SubprocVecEnv
     from stable_baselines3.common.monitor import Monitor
 
+    class _EvalSeedRotator:
+        def __init__(self, base_seed=100, rotate=True):
+            self.base_seed = base_seed
+            self.rotate = rotate
+            self._round = 0
+
+        def seed_for(self, rank):
+            offset = self._round if self.rotate else 0
+            seed = self.base_seed + rank * 1000 + offset * 100
+            return seed if seed != 0 else 1
+
+        def advance(self):
+            if self.rotate:
+                self._round += 1
+
+    class _SeededResetWrapper(Wrapper):
+        def __init__(self, env, seed):
+            super().__init__(env)
+            self.seed = seed
+
+        def reset(self, **kwargs):
+            kwargs.pop("seed", None)
+            return self.env.reset(seed=self.seed, **kwargs)
+
+    class _BatchBaselineModel:
+        def __init__(self, model):
+            self._model = model
+
+        def predict(self, obs, deterministic=True, **kwargs):
+            action, state = self._model.predict(obs, deterministic=deterministic)
+            if np.isscalar(action):
+                action = np.full(len(obs), action)
+            return action, state
+
+    class _ShapingAnnealingCallback(BaseCallback):
+        def __init__(self, total_timesteps, start_scale=1.0, end_scale=0.0, update_freq=10000):
+            super().__init__()
+            self.total_timesteps = total_timesteps
+            self.start_scale = start_scale
+            self.end_scale = end_scale
+            self.update_freq = update_freq
+            self._last_scale = None
+
+        def _on_step(self):
+            if self.num_timesteps % self.update_freq != 0:
+                return True
+            progress = min(self.num_timesteps / self.total_timesteps, 1.0)
+            scale = self.start_scale + (self.end_scale - self.start_scale) * progress
+            if self._last_scale is None or abs(scale - self._last_scale) > 1e-3:
+                self.training_env.set_attr("shaping_scale", scale)
+                self._last_scale = scale
+                logger.info(f"shaping_scale set to {scale:.4f}")
+            return True
+
     class _LoggingEvalCallback(EvalCallback):
+        def __init__(self, *args, baseline_model=None, normalize_vs_baseline=False,
+                     seed_rotator=None, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.baseline_model = baseline_model
+            self.normalize_vs_baseline = normalize_vs_baseline
+            self.seed_rotator = seed_rotator
+            self.best_selection_reward = -np.inf
         def _on_step(self) -> bool:
             continue_training = True
             if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
@@ -81,6 +145,9 @@ def run(config: dict):
                             "see https://stable-baselines3.readthedocs.io/en/master/guide/callbacks.html#evalcallback "
                             "and warning above."
                         ) from e
+                if self.seed_rotator is not None:
+                    for i in range(self.eval_env.num_envs):
+                        self.eval_env.set_attr("seed", self.seed_rotator.seed_for(i), indices=[i])
                 self._is_success_buffer = []
                 from stable_baselines3.common.evaluation import evaluate_policy
                 episode_rewards, episode_lengths = evaluate_policy(
@@ -100,21 +167,45 @@ def run(config: dict):
                     if len(self._is_success_buffer) > 0:
                         self.evaluations_successes.append(self._is_success_buffer)
                         kwargs = dict(successes=self.evaluations_successes)
-                    import numpy as np
                     np.savez(self.log_path, timesteps=self.evaluations_timesteps,
                              results=self.evaluations_results,
                              ep_lengths=self.evaluations_length, **kwargs)
                 mean_reward, std_reward = np.mean(episode_rewards), np.std(episode_rewards)
                 mean_ep_length, std_ep_length = np.mean(episode_lengths), np.std(episode_lengths)
                 self.last_mean_reward = float(mean_reward)
+
+                baseline_reward, baseline_std, normalized_reward = 0.0, 0.0, float(mean_reward)
+                if self.baseline_model is not None:
+                    baseline_rewards, _ = evaluate_policy(
+                        self.baseline_model, self.eval_env,
+                        n_eval_episodes=self.n_eval_episodes,
+                        render=self.render,
+                        deterministic=True,
+                        return_episode_rewards=True,
+                        warn=self.warn,
+                    )
+                    baseline_reward = float(np.mean(baseline_rewards))
+                    baseline_std = float(np.std(baseline_rewards))
+                    normalized_reward = mean_reward - baseline_reward
+
+                selection_reward = normalized_reward if self.normalize_vs_baseline else mean_reward
+
                 if self.verbose >= 1:
                     logger.info(
                         f"Eval num_timesteps={self.num_timesteps}, "
                         f"episode_reward={mean_reward:.2f} +/- {std_reward:.2f}"
                     )
                     logger.info(f"Episode length: {mean_ep_length:.2f} +/- {std_ep_length:.2f}")
+                    if self.baseline_model is not None:
+                        logger.info(
+                            f"baseline_reward={baseline_reward:.2f} +/- {baseline_std:.2f}, "
+                            f"normalized_reward={normalized_reward:.2f}"
+                        )
                 self.logger.record("eval/mean_reward", float(mean_reward))
                 self.logger.record("eval/mean_ep_length", mean_ep_length)
+                if self.baseline_model is not None:
+                    self.logger.record("eval/baseline_reward", baseline_reward)
+                    self.logger.record("eval/normalized_reward", normalized_reward)
                 if len(self._is_success_buffer) > 0:
                     success_rate = np.mean(self._is_success_buffer)
                     if self.verbose >= 1:
@@ -122,16 +213,19 @@ def run(config: dict):
                     self.logger.record("eval/success_rate", success_rate)
                 self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
                 self.logger.dump(self.num_timesteps)
-                if mean_reward > self.best_mean_reward:
+                if selection_reward > self.best_selection_reward:
                     if self.verbose >= 1:
                         logger.info("New best mean reward!")
                     if self.best_model_save_path is not None:
                         self.model.save(os.path.join(self.best_model_save_path, "best_model"))
+                    self.best_selection_reward = float(selection_reward)
                     self.best_mean_reward = float(mean_reward)
                     if self.callback_on_new_best is not None:
                         continue_training = self.callback_on_new_best.on_step()
                 if self.callback is not None:
                     continue_training = continue_training and self._on_event()
+                if self.seed_rotator is not None:
+                    self.seed_rotator.advance()
             return continue_training
 
     num_envs = train_cfg["num_envs"]
@@ -157,15 +251,20 @@ def run(config: dict):
     else:
         logger.info(f"Constructing {algorithm} model from scratch")
         if algorithm == "DQN":
-            model = DQN(
-                train_cfg["policy"],
-                t_env,
-                verbose=0,
+            dqn_kwargs = dict(
                 learning_rate=train_cfg["learning_rate"],
                 batch_size=train_cfg["batch_size"],
                 gradient_steps=train_cfg["gradient_steps"],
+                buffer_size=train_cfg.get("buffer_size", 1000000),
+                learning_starts=train_cfg.get("learning_starts", 100000),
+                target_update_interval=train_cfg.get("target_update_interval", 10000),
+                tau=train_cfg.get("tau", 1.0),
+                exploration_fraction=train_cfg.get("exploration_fraction", 0.1),
+                exploration_initial_eps=train_cfg.get("exploration_initial_eps", 1.0),
+                exploration_final_eps=train_cfg.get("exploration_final_eps", 0.05),
                 device=train_cfg["device"],
             )
+            model = DQN(train_cfg["policy"], t_env, verbose=0, **dqn_kwargs)
         elif algorithm == "PPO":
             model = PPO(
                 train_cfg["policy"],
@@ -185,29 +284,52 @@ def run(config: dict):
     eval_cfg = train_cfg["eval"]
     eval_episode_steps = 288 * eval_cfg["episode_days"]
     eval_num_envs = eval_cfg["num_envs"]
+    use_raw_env = eval_cfg.get("use_raw_env", True)
+    rotate_episodes = eval_cfg.get("rotate_episodes", True)
+    seed_rotator = _EvalSeedRotator(base_seed=100, rotate=rotate_episodes)
 
     logger.info(f"Creating evaluation environment ({eval_num_envs} parallel envs x {eval_episode_steps} steps)")
 
+    if use_raw_env:
+        eval_env_cls = InverterEnv
+        eval_env_kwargs = {}
+    else:
+        eval_env_cls = InverterEnvBatteryMgmt
+        eval_env_kwargs = dict(
+            reward_near_full=rewards["reward_near_full"],
+            penalty_below_night_reserve=rewards["penalty_below_night_reserve"],
+            penalty_below_min_reserve=rewards["penalty_below_min_reserve"],
+            min_reserve=reserves["min_reserve"],
+            night_reserver=reserves["night_reserver"],
+            near_full=reserves["near_full"],
+        )
+
     def _make_eval_env(rank):
         def _init():
-            env = InverterEnvBatteryMgmt(
+            env = eval_env_cls(
                 inverter_sim=copy.deepcopy(i_sim),
                 max_steps=eval_episode_steps,
-                reward_near_full=rewards["reward_near_full"],
-                penalty_below_night_reserve=rewards["penalty_below_night_reserve"],
-                penalty_below_min_reserve=rewards["penalty_below_min_reserve"],
-                min_reserve=reserves["min_reserve"],
-                night_reserver=reserves["night_reserver"],
-                near_full=reserves["near_full"],
+                **eval_env_kwargs,
             )
             env.shuffle = train_cfg["shuffle"]
             env.inverter_sim.reset(seed=rank * 1000 + 100, shuffle=train_cfg["shuffle"])
             env.inverter_sim.grid_sim.energy_price_buy = rewards["energy_price_buy_per_kwh"] / 1000
-            return Monitor(env)
+            return _SeededResetWrapper(Monitor(env), seed=rank * 1000 + 100)
 
         return _init
 
     eval_env_vec = SubprocVecEnv([_make_eval_env(i) for i in range(eval_num_envs)])
+
+    baseline_model = None
+    if eval_cfg.get("normalize_vs_baseline", True):
+        baseline_name = eval_cfg.get("baseline", "conservative")
+        if baseline_name == "conservative":
+            baseline_model = _BatchBaselineModel(ConservativeModel())
+        elif baseline_name == "greedy":
+            baseline_model = _BatchBaselineModel(GreedyModel())
+        else:
+            raise ValueError(f"Unsupported eval baseline: {baseline_name}")
+        logger.info(f"Evaluation normalized against '{baseline_name}' baseline (seeded episodes)")
 
     logger.info("Setting up callbacks")
     eval_callback = _LoggingEvalCallback(
@@ -215,6 +337,10 @@ def run(config: dict):
         best_model_save_path=os.path.join(logs_dir, "best_model"),
         log_path=os.path.join(logs_dir, "results"),
         eval_freq=week * eval_cfg["eval_freq_multiplier"],
+        n_eval_episodes=eval_num_envs,
+        baseline_model=baseline_model,
+        normalize_vs_baseline=eval_cfg.get("normalize_vs_baseline", True),
+        seed_rotator=seed_rotator,
     )
 
     checkpoint_callback = CheckpointCallback(
@@ -227,11 +353,17 @@ def run(config: dict):
 
     total_timesteps = full_period * train_cfg["train_periods"]
     logger.info(f"Training for {total_timesteps} timesteps")
+
+    callbacks = [eval_callback, checkpoint_callback]
+    if train_cfg.get("anneal_shaping", False):
+        logger.info("Enabling reward shaping annealing (shaped -> raw objective over training)")
+        callbacks.append(_ShapingAnnealingCallback(total_timesteps))
+
     logger.info("Starting model.learn()")
 
     start = time.time()
     try:
-        model.learn(total_timesteps=total_timesteps, callback=[eval_callback, checkpoint_callback])
+        model.learn(total_timesteps=total_timesteps, callback=callbacks)
     except Exception:
         logger.warning("Training crashed — saving crashed model before re-raising")
         model.save(os.path.join(logs_dir, "crashed_model"))
